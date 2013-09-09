@@ -15,7 +15,10 @@ public class serviceForSlave implements Runnable{
 	private Socket sock;
 	private InetAddress slaveAddr;
 	
+	private volatile boolean isRun;
+	
 	public serviceForSlave(processManager pm, Socket sock) throws IOException {
+		this.isRun = true;
 		this.sock = sock;
 		this.slaveAddr = sock.getInetAddress();
 		this.pm = pm;
@@ -30,6 +33,10 @@ public class serviceForSlave implements Runnable{
 	
 	public ObjectOutputStream getOut() {
 		return out;
+	}
+	
+	public void stopService() {
+		isRun = false;
 	}
 	
 	public void writeToClient(message msg) {
@@ -47,7 +54,7 @@ public class serviceForSlave implements Runnable{
 	@Override
 	public void run() {
 		// TODO Auto-generated method stub
-		while (true) {
+		while (isRun) {
 			message msg;
 			try {
 				Object o = in.readObject();
@@ -66,6 +73,7 @@ public class serviceForSlave implements Runnable{
 					case "M":
 					case "S":
 					case "T":
+					case "E":
 						pm.job(msg, this);
 						break;
 					default:
@@ -81,9 +89,15 @@ public class serviceForSlave implements Runnable{
 			}
 		}
 		
-		//in.close();
-		//out.close();
-		//sock.close();
+		try {
+			in.close();
+			out.close();
+			sock.close();
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+		
 	}
 
 	public Integer getSid() {
@@ -93,7 +107,5 @@ public class serviceForSlave implements Runnable{
 	public void setSid(Integer sid) {
 		this.sid = sid;
 	}
-
-	
 
 }

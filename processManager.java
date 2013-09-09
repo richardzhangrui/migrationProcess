@@ -25,28 +25,31 @@ public class processManager {
 	
 	private Thread connectThread;
 	
-	private LinkedList<Thread> threads;
-	private LinkedList<Integer> suspendedProcess;
+	//private LinkedList<Thread> threads;
+	private volatile LinkedList<Integer> suspendedProcess;
+	//private LinkedList<Integer> terminatedProcess;
 	//private LinkedList<serviceForSlave> slaves;
-	private HashMap<Integer, migratableProcess> pidToProcess;
-	private HashMap<Integer, Integer> pidToSlave;
-	private HashMap<Integer, serviceForSlave> sidToSlave;
-	private HashMap<Integer, Integer> sidToLoad;
-	private HashMap<Integer, Thread>  pidToThread; //currently run on this node's process and its corresponding threads
+	private volatile HashMap<Integer, migratableProcess> pidToProcess;
+	private volatile HashMap<Integer, Integer> pidToSlave;
+	private volatile HashMap<Integer, serviceForSlave> sidToSlave;
+	private volatile HashMap<Integer, Integer> sidToLoad;
+	
+	private volatile HashMap<Integer, Thread>  pidToThread; //currently run on this node's process and its corresponding threads
 	
 	public processManager(int port) {
 		this.load = 10;
 		this.sid = 0;
 		this.pid = 0;
 		this.port = port;
-		threads = new LinkedList<Thread>();
+		//threads = new LinkedList<Thread>();
 		suspendedProcess = new LinkedList<Integer>();
 		//slaves = new LinkedList<serviceForSlave>();
+		//terminatedProcess = new LinkedList<Integer>();
 		pidToProcess = new HashMap<Integer, migratableProcess>();
 		pidToSlave = new HashMap<Integer, Integer>();
 		sidToSlave = new HashMap<Integer, serviceForSlave>();
 		sidToLoad = new HashMap<Integer, Integer>();
-		sidToLoad.put(-1,this.load);
+		sidToLoad.put(ID,this.load);
 		pidToThread = new HashMap<Integer, Thread>();
 	}
 	
@@ -71,17 +74,97 @@ public class processManager {
 		//}
 		
 		synchronized(sid) {
-			synchronized(sidToSlave) {
-				sidToSlave.put(sid, service);
-			}
-			synchronized(sidToLoad) {
-				sidToLoad.put(sid, 0);
-			}
+//			synchronized(sidToSlave) {
+//				sidToSlave.put(sid, service);
+//			}
+			addSidToSlave_ts(sid, service);
+//			synchronized(sidToLoad) {
+//				sidToLoad.put(sid, 0);
+//			}
+			addSidToLoad_ts(sid, 0);
 			service.setSid(sid);
 			sid++;
 		}
 		
 		return true;
+	}
+	
+	private void addSidToSlave_ts(Integer sid, serviceForSlave service) {
+		synchronized(sidToSlave) {
+			sidToSlave.put(sid, service);
+		}
+	}
+	
+	private void addSidToLoad_ts(Integer sid, Integer load) {
+		synchronized(sidToLoad) {
+			sidToLoad.put(sid, load);
+		}
+	}
+	
+	private void addPidToSlave_ts(Integer pid, Integer sid) {
+		synchronized(pidToSlave) {
+			pidToSlave.put(pid, sid);
+		}
+	}
+	
+	private void removeSuspended_ts(Integer pid) {
+		synchronized(suspendedProcess){
+			for(int i = 0; i < suspendedProcess.size(); i++) {
+				if(pid.equals(suspendedProcess.get(i))) {
+					suspendedProcess.remove(i);
+					break;
+				}
+			}
+		}
+		return;
+	}
+	
+	private void removePidToSlave_ts(Integer pid) {
+		synchronized(pidToSlave) {
+			pidToSlave.remove(pid);
+		}
+	}
+	
+	private void addSuspended_ts(Integer pid) {
+		synchronized(suspendedProcess) {
+			suspendedProcess.add(pid);
+		}
+	}
+	
+	private void increaseLoad_ts(Integer sid) {
+		addSidToLoad_ts(sid, sidToLoad.get(sid) + 1);
+	}
+	
+	private void decreaseLoad_ts(Integer sid) {
+		addSidToLoad_ts(sid, sidToLoad.get(sid) - 1);
+	}
+	
+	private void removeProcess_ts(Integer pid) {
+		synchronized(pidToProcess) {
+			pidToProcess.remove(pid);
+		}
+	}
+	
+	private void addProcess_ts(Integer pid, migratableProcess p) {
+		synchronized(pidToProcess) {
+			pidToProcess.put(pid, p);
+		}
+	}
+	
+	private void updateProcess_ts(Integer pid, migratableProcess p) {
+		addProcess_ts(pid, p);
+	}
+	
+	private void addPidToThread_ts(Integer pid, Thread t) {
+		synchronized(pidToThread) {
+			pidToThread.put(pid, t);
+		}
+	}
+	
+	private void removePidToThread_ts(Integer pid) {
+		synchronized(pidToThread) {
+			pidToThread.remove(pid);
+		}
 	}
 	
 	public void job(message msg, serviceForSlave service) {
@@ -91,62 +174,87 @@ public class processManager {
 			return;
 		}
 		switch(msg.getCommand()) {
+			case "E":
+				removeSuspended_ts(msg.getPid());
+				break;
 			case "R":
 				//slaveHost tmpslave = new slaveHost();
 				//tmpslave.setAddr(slaveAddr);
-				synchronized(pidToSlave) {
-					pidToSlave.put(msg.getPid(), service.getSid());
-				}
-				synchronized(suspendedProcess) {
-					//remove from suspendedProcess list
-					removeSuspended(msg.getPid());
-				}
+//				synchronized(pidToSlave) {
+//					pidToSlave.put(msg.getPid(), service.getSid());
+//				}
+				addPidToSlave_ts(msg.getPid(), msg.getSid());
+//				synchronized(suspendedProcess) {
+//					//remove from suspendedProcess list
+//					removeSuspended(msg.getPid());
+//				}
+				//removeSuspended_ts(msg.getPid());
+				increaseLoad_ts(msg.getSid());
 				break;
-			case "FR":
-				break;
+//			case "FR":
+//				break;
 			case "M":
-				synchronized(pidToSlave) {
-					pidToSlave.remove(msg.getPid());
-				}
-				synchronized(suspendedProcess) {
-					suspendedProcess.add(msg.getPid());
-				}
+				decreaseLoad_ts(pidToSlave.get(msg.getPid()));
+				removePidToSlave_ts(msg.getPid());
+				migratableProcess p = msg.getProcess(); 
 				
-				if(msg.getSid().equals(-1)) {
-					migratableProcess p = msg.getProcess(); 
+//				synchronized(pidToSlave) {
+//					pidToSlave.remove(msg.getPid());
+//				}
+//				synchronized(suspendedProcess) {
+//					suspendedProcess.add(msg.getPid());
+//				}
+				
+				if(msg.getSid().equals(ID)) {
+					
 					if(p != null) {
 						Thread t = new Thread(p);
 						t.start();
-						synchronized(pidToThread) {
-							pidToThread.put(msg.getPid(),t);
-						}
-						synchronized(pidToSlave) {
-							pidToSlave.put(msg.getPid(), msg.getSid());
-						}
+						p.resume();
+//						synchronized(pidToThread) {
+//							pidToThread.put(msg.getPid(),t);
+//						}
+//						synchronized(pidToSlave) {
+//						pidToSlave.put(msg.getPid(), ID);
+//					}
+
+						addPidToThread_ts(msg.getPid(), t);
+						addPidToSlave_ts(msg.getPid(), ID);
+						increaseLoad_ts(ID);
 					}
 					
 					//remove the process from the suspendedProcess list
 				}
 				else {
-					msg.setCommand("R");
+					addSuspended_ts(msg.getPid());
+					updateProcess_ts(msg.getPid(), p);
+					msg.setCommand("E");
 					sidToSlave.get(msg.getSid()).writeToClient(msg);
 				}
 				break;
 			case "S":
-				synchronized(pidToSlave) {
-					pidToSlave.remove(msg.getPid());
-				}
-				synchronized(suspendedProcess) {
-					suspendedProcess.add(msg.getPid());
-				}
+//				synchronized(pidToSlave) {
+//				pidToSlave.remove(msg.getPid());
+//			}
+//			synchronized(suspendedProcess) {
+//				suspendedProcess.add(msg.getPid());
+//			}
+				suspendProcess(msg.getPid(), msg.getProcess());
+				//removePidToSlave_ts(msg.getPid());
+				//addSuspended_ts(msg.getPid());
+				//decreaseLoad_ts(msg.getSid());
 				break;
 			case "T":
-				synchronized(pidToSlave) {
-					pidToSlave.remove(msg.getPid());
-				}
-				synchronized(pidToProcess) {
-					pidToProcess.remove(msg.getPid());
-				}
+				removePidToSlave_ts(msg.getPid());
+				removeProcess_ts(msg.getPid());
+				decreaseLoad_ts(msg.getSid());
+				//service.stopService();
+//				synchronized(pidToSlave) {
+//					pidToSlave.remove(msg.getPid());
+//				}
+//				synchronized(pidToProcess) {
+//					pidToProcess.remove(msg.getPid());
+//				}
 				break;
 			default:
 				System.err.println("processManager: unrecognizable command!\n");
@@ -155,7 +263,7 @@ public class processManager {
 	}
 
 	public int chooseBestSlave() {
-		int min = -1;
+		int min = ID;
 		int minLoad = sidToLoad.get(min);
 		synchronized(sidToLoad) {
 			for (Map.Entry<Integer, Integer> entry : sidToLoad.entrySet()) {
@@ -168,6 +276,14 @@ public class processManager {
 		}
 		
 		return min;
+	}
+	
+	private void suspendProcess(Integer spid, migratableProcess p) {
+		updateProcess_ts(spid, p);
+		decreaseLoad_ts(pidToSlave.get(spid));
+		//removePidToSlave_ts(spid);
+		//removePidToThread_ts(spid);
+		addSuspended_ts(spid);
 	}
 	
 	private void start() {
@@ -223,17 +339,30 @@ public class processManager {
 					msid = Integer.parseInt(args[2]);
 				}
 				
-				if(pidToSlave.get(pid).equals(msid)) {
+				if(!hasProcess(mpid)) {
+					System.out.println("There's no process running with this processID!");
+					continue;
+				}
+				else if(isSuspended(mpid)) {
+					System.out.println("This process is suspended!");
+					continue;
+				}
+				else if(pidToSlave.get(pid).equals(msid)) {
+					System.out.println("This process is running on this slave!");
 					continue;
 				}
 				else {
+					if(!hasSlave(msid)) {
+						System.out.println("There's no slave with this slaveID!");
+						continue;
+					}
 					Integer csid = pidToSlave.get(mpid);
-					if(csid.equals(-1)) {
+					if(csid.equals(ID)) {
 						migratableProcess p = pidToProcess.get(mpid);
 						p.suspend();
-						pidToThread.remove(mpid);
-						pidToSlave.remove(mpid);
-						message m = new message(msid, mpid, p, "R");
+						removePidToSlave_ts(mpid);
+						suspendProcess(mpid, p);
+						message m = new message(msid, mpid, p, "E");
 						sidToSlave.get(msid).writeToClient(m);
 					}
 					else {
@@ -249,23 +378,67 @@ public class processManager {
 					continue;
 				}
 				else {
+					
 					spid = Integer.parseInt(args[1]);
-					Integer csid = pidToSlave.get(spid);
-					message msg = new message(csid, spid, null, "S");
-					sidToSlave.get(csid).writeToClient(msg);
+					
+					if(!hasProcess(spid)) {
+						System.out.println("There's no process running with this pid!");
+						continue;
+					}
+					else if (isSuspended(spid)) {
+						System.out.println("This process has already been suspended!");
+						continue;
+					}
+					
+					else {
+						Integer ssid = pidToSlave.get(spid);
+						if(ssid.equals(new Integer(ID))) {
+							migratableProcess p = pidToProcess.get(spid);
+							p.suspend();
+							suspendProcess(spid, p);
+//							updateProcess_ts(spid, p);
+//							removePidToSlave_ts(spid);
+//							//removePidToThread_ts(spid);
+//							addSuspended_ts(spid);
+//							decreaseLoad_ts(new Integer(ID));
+						}
+						else {
+							message msg = new message(ssid, spid, null, "S");
+							sidToSlave.get(ssid).writeToClient(msg);
+						}
+					}
 				}
 			}
 			else if (args[0].equals("terminate")){
-				int spid;
+				int tpid;
 				if(args.length == 1) {
 					System.out.println("terminate usage: terminate processID");
 					continue;
 				}
 				else {
-					spid = Integer.parseInt(args[1]);
-					Integer csid = pidToSlave.get(spid);
-					message msg = new message(csid, spid, null, "T");
-					sidToSlave.get(csid).writeToClient(msg);
+					tpid = Integer.parseInt(args[1]);
+					if(!hasProcess(tpid)) {
+						System.out.println("There's no process running with this pid!");
+						continue;
+					}
+					else {
+						
+						Integer tsid = pidToSlave.get(tpid);
+						if(tsid.equals(new Integer(ID))) {
+							migratableProcess p = pidToProcess.get(tpid);
+							p.terminate();
+							if(!isSuspended(tpid)) {
+								removePidToSlave_ts(tpid);
+								decreaseLoad_ts(new Integer(ID));
+							}
+							removePidToThread_ts(tpid);
+						}
+						else {
+							message msg = new message(tsid, tpid, null, "T");
+							sidToSlave.get(tsid).writeToClient(msg);
+						}
+						
+					}
 				}
 			}
 			else if (args[0].equals("resume")) {
@@ -276,32 +449,39 @@ public class processManager {
 				}
 				else {
 					rpid = Integer.parseInt(args[1]);
-					if(!isSuspended(rpid)) {
+					if(!hasProcess(rpid)) {
+						System.out.println("There's no process running with this pid!");
+						continue;
+					}
+					else if(!isSuspended(rpid)) {
 						System.out.println("This process is not suspended!");
 						continue;
 					}
-					Integer csid = chooseBestSlave();
-					migratableProcess p = pidToProcess.get(rpid);
-					if(csid.equals(-1)) { 
-						if(p != null) {
-							Thread t = new Thread(p);
-							t.start();
-							pidToThread.put(rpid,t);
-						}
-						//remove the process from the suspendedProcess list
-						synchronized(suspendedProcess) {
-							removeSuspended(rpid);
-						}
-					}
 					else {
-						message msg = new message(-1, rpid, pidToProcess.get(rpid), "R");
-						sidToSlave.get(csid).writeToClient(msg);
+						Integer rsid = pidToSlave.get(rpid);
+						migratableProcess p = pidToProcess.get(rpid);
+						if(rsid.equals(ID)) { 
+							if(p != null) {
+								p.resume();
+//								pidToThread.put(rpid,t);
+							}
+							//remove the process from the suspendedProcess list
+							removeSuspended_ts(rpid);
+							increaseLoad_ts(ID);
+							//synchronized(suspendedProcess) {
+//								removeSuspended(rpid);
+//							}
+						}
+						else {
+							message msg = new message(rsid, rpid, pidToProcess.get(rpid), "E");
+							sidToSlave.get(rsid).writeToClient(msg);
+						}
 					}
 				}			
 			}
 			else if (args[0].equals("run")) {
 				if(args.length == 1) {
-					System.out.println("run usage: run processName");
+					System.out.println("run usage: run processClassName");
 					continue;
 				}
 				migratableProcess newProcess;
@@ -338,13 +518,17 @@ public class processManager {
 				}
 				
 				Integer sid = chooseBestSlave();
-				pidToProcess.put(this.pid, newProcess);
-				if(sid.equals(-1)) {
+				addProcess_ts(this.pid, newProcess);
+				//pidToProcess.put(this.pid, newProcess);
+				if(sid.equals(ID)) {
 					if(newProcess != null) {
 						Thread t = new Thread(newProcess);
 						t.start();
-						pidToThread.put(this.pid,t);
-						pidToSlave.put(this.pid, sid);
+						addPidToThread_ts(this.pid, t);
+						addPidToSlave_ts(this.pid, ID);
+						increaseLoad_ts(ID);
+						//pidToThread.put(this.pid,t);
+						//pidToSlave.put(this.pid, sid);
 					}
 				}
 				else {
@@ -361,23 +545,17 @@ public class processManager {
 	}
 	
 	private boolean isSuspended(int pid) {
-		for(Integer id : suspendedProcess) {
-			if(id.equals(pid)) {
-				return true;
-			}
-		}
-		return false;
+		return suspendedProcess.contains(new Integer(pid));
 	}
 	
-	private void removeSuspended(Integer pid) {
-		for(int i = 0; i < suspendedProcess.size(); i++) {
-			if(pid.equals(suspendedProcess.get(i))) {
-				suspendedProcess.remove(i);
-				return;
-			}
-		}
-		return;
+	private boolean hasProcess(int pid) {
+		return pidToProcess.containsKey(new Integer(pid));
 	}
+	
+	private boolean hasSlave(int sid) {
+		return sidToSlave.containsKey(new Integer(sid));
+	}
+	
 	
 	/**
 	 * @param args
