@@ -1,4 +1,4 @@
-package mainfolder;
+//package mainfolder;
 
 import java.io.IOException;
 import java.io.ObjectInputStream;
