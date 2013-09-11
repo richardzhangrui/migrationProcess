@@ -250,6 +250,7 @@ public class slaveNode {
 					}
 					removeSuspended_ts(tpid);
 					removePidToThread_ts(tpid);
+					removeProcess_ts(tpid);
 					this.writeToMaster(msg);
 					System.out.println("Terminate process done!");
 				}
