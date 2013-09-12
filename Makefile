@@ -8,7 +8,6 @@ CLASSES = \
 	migratableProcess.java \
 	TransactionalFileInputStream.java \
 	TransactionalFileOutputStream.java \
-	slaveHost.java \
 	message.java \
 	serviceForSlave.java \
 	managerServer.java \

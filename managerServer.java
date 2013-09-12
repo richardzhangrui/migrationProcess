@@ -1,4 +1,4 @@
-//package mainfolder;
+
 
 import java.io.IOException;
 import java.net.ServerSocket;
@@ -7,7 +7,7 @@ import java.net.Socket;
 public class managerServer implements Runnable{
 
 	private ServerSocket listener;
-	private boolean isRun = true;
+	private volatile boolean isRun = true;
 	private processManager pm;
 	
 	public managerServer(processManager pm) throws IOException {

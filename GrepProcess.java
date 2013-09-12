@@ -14,9 +14,12 @@ public class GrepProcess implements migratableProcess
 	private String query;
 
 	private volatile boolean suspending;
+	private volatile boolean isTerminate;
 
 	public GrepProcess(String args[]) throws Exception
 	{
+		suspending = false;
+		isTerminate = false;
 		if (args.length != 3) {
 			System.out.println("usage: GrepProcess <queryString> <inputFile> <outputFile>");
 			throw new Exception("Invalid Arguments");
@@ -33,18 +36,25 @@ public class GrepProcess implements migratableProcess
 		DataInputStream in = new DataInputStream(inFile);
 
 		try {
-			while (!suspending) {
+			while (!isTerminate) {
+				synchronized(this) {
+				while(suspending){
+					try {
+						wait();
+					} catch(InterruptedException e){
+					}
+				}
+				}
 				String line = in.readLine();
 
 				if (line == null) break;
 				
-				if (line.contains(query)) {
-					out.println(line);
-				}
+				System.out.println(line);
+				out.println(line);
 				
 				// Make grep take longer so that we don't require extremely large files for interesting results
 				try {
-					Thread.sleep(100);
+					Thread.sleep(20000);
 				} catch (InterruptedException e) {
 					// ignore it
 				}
@@ -62,22 +72,23 @@ public class GrepProcess implements migratableProcess
 	public void suspend()
 	{
 		suspending = true;
-		while (suspending);
 	}
 
 	public String toString()
 	{
-		return "ok";
+		String tmp = this.getClass().getName(); 
+		return tmp;
 	}
 
-	public void resume()
+	public synchronized void resume()
 	{
-
+		suspending = false;
+		this.notify();
 	}
 
 	public void terminate()
 	{
-
+		isTerminate = true;	
 	}
 
 }

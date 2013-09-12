@@ -1,4 +1,4 @@
-//package mainfolder;
+
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -8,6 +8,8 @@ import java.lang.reflect.InvocationTargetException;
 import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.Map;
+import java.util.Timer;
+import java.util.TimerTask;
 
 
 
@@ -33,6 +35,7 @@ public class processManager {
 	private volatile HashMap<Integer, Integer> pidToSlave;
 	private volatile HashMap<Integer, serviceForSlave> sidToSlave;
 	private volatile HashMap<Integer, Integer> sidToLoad;
+	private volatile HashMap<Integer, LinkedList<Integer>> sidToPids;
 	
 	private volatile HashMap<Integer, Thread>  pidToThread; //currently run on this node's process and its corresponding threads
 	
@@ -50,7 +53,86 @@ public class processManager {
 		sidToSlave = new HashMap<Integer, serviceForSlave>();
 		sidToLoad = new HashMap<Integer, Integer>();
 		sidToLoad.put(ID,this.load);
+		sidToPids = new HashMap<Integer, LinkedList<Integer>>();
+		sidToPids.put(ID, new LinkedList<Integer>());
+		
 		pidToThread = new HashMap<Integer, Thread>();
+	}
+	
+	private void printSuspended() {
+		System.out.println("Suspended Processes:");
+		System.out.println("ProcessID\tProcessName\tProcessStatus\tSlaveID\tSlaveIP");
+		for(Integer spid : suspendedProcess) {
+		    Integer slaveid = pidToSlave.get(spid);
+		    String address;
+		    if(slaveid.equals(ID)) {
+			address = "localhost";
+		    }
+		    else {
+			address = sidToSlave.get(slaveid).getAddress();
+		    }
+			System.out.printf("[%d]\t[%s]\tsuspended\t(%d)\t%s\n",spid, pidToProcess.get(spid).toString(),slaveid,address);
+		}
+	}
+
+	private void printProcesses() {
+		System.out.println("ProcessID\tProcessName\tProcessStatus\tSlaveID\tSlaveIP");
+		for (Map.Entry<Integer, migratableProcess> entry : pidToProcess.entrySet()) {
+		    Integer key = entry.getKey();
+		    migratableProcess value = entry.getValue();
+		    String status;
+		    if(suspendedProcess.contains(key)) {
+			status = "suspended";
+		    }
+		    else {
+			status = "running";
+		    }
+		    Integer slaveid = pidToSlave.get(key);
+		    String address;
+		    if(slaveid.equals(ID)) {
+			address = "localhost";
+		    }
+		    else {
+			address = sidToSlave.get(slaveid).getAddress();
+		    }
+       		    System.out.printf("[%d]\t[%s]\t%s\t(%s)\t%s\n",key, value.toString(), status, slaveid, address);
+		}
+	}
+
+	private void printSlaveLoad() {
+		System.out.println("SlaveID\tSlaveIP\tSlaveLoad");
+       		System.out.printf("[%d]\t%s\t%d\n",this.ID, "localhost", sidToLoad.get(ID));
+		for (Map.Entry<Integer, serviceForSlave> entry : sidToSlave.entrySet()) {
+		    Integer key = entry.getKey();
+		    serviceForSlave value = entry.getValue();
+		    
+       		    System.out.printf("[%d]\t%s\t%d\n",key, value.getAddress(), sidToLoad.get(key));
+		}
+		
+	}
+
+	private void printSlaveInfo(Integer csid) {
+		String address;
+		if(csid.equals(ID)) {
+			address = "localhost";
+		}
+		else {
+			address = sidToSlave.get(csid).getAddress();
+		}
+		System.out.printf("SlaveId:%d\tSlaveIP:%s\tSlaveLoad:%d\n",csid, address, sidToLoad.get(csid));
+		System.out.println("Processes running on this slave:");
+		System.out.println("ProcessID\tProcessName\tProcessStatus");
+		for (Integer cpid : sidToPids.get(csid)) {
+		    migratableProcess value = pidToProcess.get(cpid);
+		    String status;
+		    if(suspendedProcess.contains(cpid)) {
+			status = "suspended";
+		    }
+		    else {
+			status = "running";
+		    }
+       		    System.out.printf("[%d]\t[%s]\t%s\n",cpid, value.toString(), status);
+		}	
 	}
 	
 	public int getPort() {
@@ -82,11 +164,36 @@ public class processManager {
 //				sidToLoad.put(sid, 0);
 //			}
 			addSidToLoad_ts(sid, 0);
+			addSidToPids_ts(sid,new LinkedList<Integer>());
 			service.setSid(sid);
 			sid++;
 		}
 		
 		return true;
+	}
+	
+	private void addSidToPids_ts(Integer sid, LinkedList<Integer> pids) {
+		synchronized(sidToPids) {
+			sidToPids.put(sid, pids);
+		}
+	}
+	
+	private void removeSidToPids_ts(Integer sid) {
+		synchronized(sidToPids) {
+			sidToPids.remove(sid);
+		}
+	}
+	
+	private void addPidToSidList_ts(Integer sid, Integer pid) {
+		synchronized(sidToPids.get(sid)) {
+			sidToPids.get(sid).add(pid);
+		}
+	}
+	
+	private void removePidFromSidList_ts(Integer sid, Integer pid) {
+		synchronized(sidToPids.get(sid)) {
+			sidToPids.get(sid).remove(pid);
+		}
 	}
 	
 	private void addSidToSlave_ts(Integer sid, serviceForSlave service) {
@@ -109,12 +216,13 @@ public class processManager {
 	
 	private void removeSuspended_ts(Integer pid) {
 		synchronized(suspendedProcess){
-			for(int i = 0; i < suspendedProcess.size(); i++) {
-				if(pid.equals(suspendedProcess.get(i))) {
-					suspendedProcess.remove(i);
-					break;
-				}
-			}
+			//for(int i = 0; i < suspendedProcess.size(); i++) {
+			//	if(pid.equals(suspendedProcess.get(i))) {
+			//		suspendedProcess.remove(i);
+			//		break;
+			//	}
+			//}
+			suspendedProcess.remove(pid);
 		}
 		return;
 	}
@@ -176,6 +284,10 @@ public class processManager {
 		switch(msg.getCommand()) {
 			case "E":
 				removeSuspended_ts(msg.getPid());
+				increaseLoad_ts(msg.getSid());
+				addPidToSlave_ts(msg.getPid(), msg.getSid());
+				addPidToSidList_ts(msg.getSid(), msg.getPid());
+				System.out.printf("Process %d resumed on Slave %d!\n",msg.getPid(),msg.getSid());
 				break;
 			case "R":
 				//slaveHost tmpslave = new slaveHost();
@@ -184,16 +296,19 @@ public class processManager {
 //					pidToSlave.put(msg.getPid(), service.getSid());
 //				}
 				addPidToSlave_ts(msg.getPid(), msg.getSid());
+				addPidToSidList_ts(msg.getSid(),msg.getPid());
 //				synchronized(suspendedProcess) {
 //					//remove from suspendedProcess list
 //					removeSuspended(msg.getPid());
 //				}
 				//removeSuspended_ts(msg.getPid());
 				increaseLoad_ts(msg.getSid());
+				System.out.printf("Process %d ran on Slave %d!\n",msg.getPid(),msg.getSid());
 				break;
 //			case "FR":
 //				break;
 			case "M":
+				removePidFromSidList_ts(pidToSlave.get(msg.getPid()), msg.getPid());
 				decreaseLoad_ts(pidToSlave.get(msg.getPid()));
 				removePidToSlave_ts(msg.getPid());
 				migratableProcess p = msg.getProcess(); 
@@ -220,6 +335,7 @@ public class processManager {
 
 						addPidToThread_ts(msg.getPid(), t);
 						addPidToSlave_ts(msg.getPid(), ID);
+						addPidToSidList_ts(ID, msg.getPid());
 						increaseLoad_ts(ID);
 					}
 					
@@ -231,6 +347,7 @@ public class processManager {
 					msg.setCommand("E");
 					sidToSlave.get(msg.getSid()).writeToClient(msg);
 				}
+				System.out.printf("Process %d migrated to Slave %d!\n",msg.getPid(),msg.getSid());
 				break;
 			case "S":
 //				synchronized(pidToSlave) {
@@ -243,11 +360,15 @@ public class processManager {
 				//removePidToSlave_ts(msg.getPid());
 				//addSuspended_ts(msg.getPid());
 				//decreaseLoad_ts(msg.getSid());
+				System.out.printf("Process %d suspended on Slave %d!\n",msg.getPid(),msg.getSid());
 				break;
 			case "T":
+				removePidFromSidList_ts(msg.getSid(), msg.getPid());
 				removePidToSlave_ts(msg.getPid());
 				removeProcess_ts(msg.getPid());
-				decreaseLoad_ts(msg.getSid());
+				if(!isSuspended(msg.getPid()))
+					decreaseLoad_ts(msg.getSid());
+				removeSuspended_ts(msg.getPid());
 				//service.stopService();
 //				synchronized(pidToSlave) {
 //					pidToSlave.remove(msg.getPid());
@@ -255,6 +376,7 @@ public class processManager {
 //				synchronized(pidToProcess) {
 //					pidToProcess.remove(msg.getPid());
 //				}
+				System.out.printf("Process %d terminated on Slave %d!\n",msg.getPid(),msg.getSid());
 				break;
 			default:
 				System.err.println("processManager: unrecognizable command!\n");
@@ -267,10 +389,11 @@ public class processManager {
 		int minLoad = sidToLoad.get(min);
 		synchronized(sidToLoad) {
 			for (Map.Entry<Integer, Integer> entry : sidToLoad.entrySet()) {
-			    Integer key = entry.getKey();
-			    Integer value = entry.getValue();
+			    int key = entry.getKey();
+			    int value = entry.getValue();
 			    if (value < minLoad) {
 			    	min = key;
+				minLoad = value;
 			    }
 			}
 		}
@@ -286,6 +409,90 @@ public class processManager {
 		addSuspended_ts(spid);
 	}
 	
+	private void migrateProcess(Integer csid, Integer msid, Integer mpid) {
+		if(csid.equals(ID)) {
+			removePidFromSidList_ts(csid, mpid);
+			migratableProcess p = pidToProcess.get(mpid);
+			p.suspend();
+			suspendProcess(mpid, p);
+			removePidToSlave_ts(mpid);
+			message m = new message(msid, mpid, p, "E");
+			sidToSlave.get(msid).writeToClient(m);
+		}
+		else {
+			message msg = new message(msid, mpid, null, "M");
+			sidToSlave.get(csid).writeToClient(msg);
+		}
+	}
+	
+	private void startReapTimer() {
+		//reap unalive theads
+		Timer reapDeadThread = new Timer();
+		reapDeadThread.scheduleAtFixedRate(new TimerTask(){
+
+			@Override
+			public void run() {
+				// TODO Auto-generated method stub
+				for (Map.Entry<Integer, Thread> entry : pidToThread.entrySet()) {
+				    Integer key = entry.getKey();
+				    Thread value = entry.getValue();
+				    if (!value.isAlive()) {
+				    	removePidToThread_ts(key);
+				    	removeProcess_ts(key);
+					Integer rsid = pidToSlave.get(key);
+					removePidFromSidList_ts(rsid,key);
+					decreaseLoad_ts(rsid);
+				    	removePidToSlave_ts(key);
+					System.out.printf("Removed dead process %d!",key);
+				    }
+				}
+			}}, 5000, 5000);		
+	}
+	
+
+	private void startBalanceTimer() {
+		Timer balanceSlave = new Timer();
+		balanceSlave.scheduleAtFixedRate(new TimerTask(){
+
+			@Override
+			public void run() {
+				// TODO Auto-generated method stub
+				int loads = 0;
+				for (Map.Entry<Integer, Integer> entry : sidToLoad.entrySet()) {
+				    Integer key = entry.getKey();
+				    Integer value = entry.getValue();
+				    if(key.equals(ID))
+					loads += (value - 10);
+				    else
+				    	loads += value;
+				}
+				
+				loads /= sidToLoad.size();
+				loads++;
+				
+				for(Map.Entry<Integer, Integer> entry : sidToLoad.entrySet()) {
+		       		    int key = entry.getKey();
+				    int value = entry.getValue();
+				    int bestsid = -2;
+				    int index = 0;
+				    while(value > loads && bestsid != key && index < sidToPids.get(key).size()) {
+				    	bestsid = chooseBestSlave();
+				    	
+				    	if(bestsid != key) {
+				    		Integer cpid = sidToPids.get(key).get(index);
+				    		if(!isSuspended(cpid)) {
+				    			migrateProcess(key,bestsid,cpid);
+				    			System.out.printf("Migrate process %d from Slave %d to Slave %d\n", cpid, key, bestsid);
+				    		}
+						index++;
+				    	}
+				    	
+				    }
+				}
+				
+			}}, 7000, 7000);	
+	}
+
 	private void start() {
 		managerServer ms = null;
 		try {
@@ -296,6 +503,11 @@ public class processManager {
 			System.err.println("processManager: IOException while creating the manager server!\n");
 			return;
 		}
+		
+		this.startReapTimer();
+		
+		this.startBalanceTimer();
+		
 		
 		//listen and accept slaves
 		connectThread = new Thread(ms);
@@ -319,9 +531,45 @@ public class processManager {
 			args = input.split(" ");
 			
 			if(args[0].equals("quit"))
-				break;
+				System.exit(0);
 			else if (args[0].equals("ps")) {
-				
+				if(args.length == 1) {
+					System.out.println("Usage: ps [-option]");
+					System.out.println("-p: print processes information");
+					System.out.println("-sp: print suspended processes information");
+					System.out.println("-sl: print slaves loads information");
+					System.out.println("-s [slaveID]: print slave with slaveID's information");
+					continue;
+				}	
+				if(args.length >= 2) {
+					switch(args[1]) {
+						case "-p":
+							printProcesses();	
+							break;
+						case "-sp":
+							printSuspended();	
+							break;
+						case "-sl":
+							printSlaveLoad();	
+							break;
+						case "-s":
+							if(args.length == 2) {
+								System.out.println("Please indicate the slaveID!");
+								continue;
+							}
+							Integer slaveid = Integer.parseInt(args[2]);
+							if(!hasSlave(slaveid)) {
+								System.out.printf("There's no Slave with slaveID %d\n",slaveid);
+							}
+							else {
+								printSlaveInfo(slaveid);	
+							}
+							break;
+						default:
+							System.out.println("Unrecognizable option!");
+							break;
+					}
+				}
 			}
 			else if (args[0].equals("migrate")) {
 				int msid;
@@ -347,7 +595,7 @@ public class processManager {
 					System.out.println("This process is suspended!");
 					continue;
 				}
-				else if(pidToSlave.get(pid).equals(msid)) {
+				else if(pidToSlave.get(mpid).equals(msid)) {
 					System.out.println("This process is running on this slave!");
 					continue;
 				}
@@ -357,18 +605,20 @@ public class processManager {
 						continue;
 					}
 					Integer csid = pidToSlave.get(mpid);
-					if(csid.equals(ID)) {
-						migratableProcess p = pidToProcess.get(mpid);
-						p.suspend();
-						removePidToSlave_ts(mpid);
-						suspendProcess(mpid, p);
-						message m = new message(msid, mpid, p, "E");
-						sidToSlave.get(msid).writeToClient(m);
-					}
-					else {
-						message msg = new message(msid, mpid, null, "M");
-						sidToSlave.get(csid).writeToClient(msg);
-					}
+					migrateProcess(csid, msid, mpid);
+//					if(csid.equals(ID)) {
+//						migratableProcess p = pidToProcess.get(mpid);
+//						p.suspend();
+//						removePidToSlave_ts(mpid);
+//						suspendProcess(mpid, p);
+//						message m = new message(msid, mpid, p, "E");
+//						sidToSlave.get(msid).writeToClient(m);
+//					}
+//					else {
+//						message msg = new message(msid, mpid, null, "M");
+//						sidToSlave.get(csid).writeToClient(msg);
+//					}
+					System.out.printf("Process %d migrated from Slave %d!\n",mpid,csid);
 				}
 			}
 			else if (args[0].equals("suspend")){
@@ -428,10 +678,13 @@ public class processManager {
 							migratableProcess p = pidToProcess.get(tpid);
 							p.terminate();
 							if(!isSuspended(tpid)) {
-								removePidToSlave_ts(tpid);
-								decreaseLoad_ts(new Integer(ID));
+								decreaseLoad_ts(new Integer(ID));	
 							}
+							removePidToSlave_ts(tpid);
+							removePidFromSidList_ts(tsid, tpid);
 							removePidToThread_ts(tpid);
+							removeProcess_ts(tpid);
+							removeSuspended_ts(tpid);
 						}
 						else {
 							message msg = new message(tsid, tpid, null, "T");
@@ -479,11 +732,8 @@ public class processManager {
 					}
 				}			
 			}
-			else if (args[0].equals("run")) {
-				if(args.length == 1) {
-					System.out.println("run usage: run processClassName");
-					continue;
-				}
+			else  {
+			
 				migratableProcess newProcess;
 				try {
 					
@@ -495,25 +745,25 @@ public class processManager {
 
 	            } catch (ClassNotFoundException e) {
 					//Couldn't link find that class. stupid user.
-					System.out.println("Run: Could not find class " + args[1]);
+					System.out.println("Run: Could not find class or no such command" + args[0]);
 					continue;
 				} catch (SecurityException e) {
-					System.out.println("Run: Security Exception getting constructor for " + args[1]);
+					System.out.println("Run: Security Exception getting constructor for " + args[0]);
 					continue;
 				} catch (NoSuchMethodException e) {
-					System.out.println("Run: Could not find proper constructor for " + args[1]);
+					System.out.println("Run: Could not find proper constructor for " + args[0]);
 					continue;
 				} catch (IllegalArgumentException e) {
-					System.out.println("Run: Illegal arguments for " + args[1]);
+					System.out.println("Run: Illegal arguments for " + args[0]);
 					continue;
 				} catch (InstantiationException e) {
-					System.out.println("Run: Instantiation Exception for " + args[1]);
+					System.out.println("Run: Instantiation Exception for " + args[0]);
 					continue;
 				} catch (IllegalAccessException e) {
-					System.out.println("Run: IIlegal access exception for " + args[1]);
+					System.out.println("Run: IIlegal access exception for " + args[0]);
 					continue;
 				} catch (InvocationTargetException e) {
-					System.out.println("Run: Invocation target exception for " + args[1]);
+					System.out.println("Run: Invocation target exception for " + args[0]);
 					continue;
 				}
 				
@@ -526,6 +776,7 @@ public class processManager {
 						t.start();
 						addPidToThread_ts(this.pid, t);
 						addPidToSlave_ts(this.pid, ID);
+						addPidToSidList_ts(ID, this.pid);
 						increaseLoad_ts(ID);
 						//pidToThread.put(this.pid,t);
 						//pidToSlave.put(this.pid, sid);
@@ -553,7 +804,7 @@ public class processManager {
 	}
 	
 	private boolean hasSlave(int sid) {
-		return sidToSlave.containsKey(new Integer(sid));
+		return (sidToSlave.containsKey(new Integer(sid)) || sid == ID);
 	}
 	
 	

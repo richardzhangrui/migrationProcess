@@ -1,4 +1,4 @@
-//package mainfolder;
+
 
 import java.net.ServerSocket;
 import java.net.Socket;
@@ -15,6 +15,8 @@ import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.Map;
 import java.io.Serializable;
+import java.util.Timer;
+import java.util.TimerTask;
 
 public class slaveNode {
 
@@ -24,7 +26,7 @@ public class slaveNode {
 
 	private boolean isRun = true;
 
-	//public Integer sid;
+	private Integer sid;
 	//public Integer pid;
 
 	private int load;
@@ -161,10 +163,13 @@ public class slaveNode {
 				if(!hasProcess(rpid)) {
 					//System.out.println("Resume process %d failed: there's no process running with this pid!",rpid);
 					if(msg.getProcess() != null) {
-						Thread t = new Thread(msg.getProcess());
+						migratableProcess p = msg.getProcess();
+						Thread t = new Thread(p);
 						t.start();
+						p.resume();
+						
 						addPidToThread_ts(msg.getPid(), t);
-						addProcess_ts(msg.getPid(),msg.getProcess());
+						addProcess_ts(msg.getPid(),p);
 						increaseLoad_ts(this.load);
 						this.writeToMaster(msg);
 						System.out.println("Resume process done!");
@@ -188,10 +193,11 @@ public class slaveNode {
 
 			case "R":
 				if(msg.getProcess() != null) {
-					Thread t = new Thread(msg.getProcess());
+					migratableProcess p = msg.getProcess();
+					Thread t = new Thread(p);
 					t.start();
 					addPidToThread_ts(msg.getPid(), t);
-					addProcess_ts(msg.getPid(),msg.getProcess());
+					addProcess_ts(msg.getPid(),p);
 					increaseLoad_ts(this.load);
 					this.writeToMaster(msg);
 					System.out.println("Run process done!");
@@ -262,7 +268,32 @@ public class slaveNode {
 		}
 	
 	}
+	
+	public void startReapTimer() {
+		if(this.isRun) {
+				//reap unalive theads
+				Timer reapDeadThread = new Timer();
+				reapDeadThread.scheduleAtFixedRate(new TimerTask(){
 
+				@Override
+				public void run() {
+					// TODO Auto-generated method stub
+					for (Map.Entry<Integer, Thread> entry : pidToThread.entrySet()) {
+					    Integer key = entry.getKey();
+					    Thread value = entry.getValue();
+					    if (!value.isAlive()) {
+					    	removePidToThread_ts(key);
+					    	removeProcess_ts(key);
+						decreaseLoad_ts(load);
+						message msg = new message(sid, key, null, "T");
+						writeToMaster(msg);
+						System.out.printf("Removed dead process %d!\n",key);
+					    }
+					}
+				}}, 5000, 5000);			
+			}
+	
+	}
 
 	public static void main(String[] argv) {
 		
@@ -290,7 +321,8 @@ public class slaveNode {
 			message msgC = new message(null, null, null, "C");			
 			sn.writeToMaster(msgC);
 			System.out.println("Connecting to master: " + argv[0]);
-
+			
+			sn.startReapTimer();
 
 			while(sn.isRun){
 
@@ -305,6 +337,7 @@ public class slaveNode {
 					msg = (message)o;
 					switch(msg.getCommand()) {
 						case "C":
+							sn.sid = msg.getSid();
 							break;
 						case "R":
 						case "M":

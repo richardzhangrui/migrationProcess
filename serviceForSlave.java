@@ -1,4 +1,4 @@
-//package mainfolder;
+
 
 import java.io.IOException;
 import java.io.ObjectInputStream;
@@ -39,6 +39,10 @@ public class serviceForSlave implements Runnable{
 		isRun = false;
 	}
 	
+
+	public String getAddress() {
+		return slaveAddr.toString(); 
+	}	
 	public void writeToClient(message msg) {
 		try {
 			synchronized(out)
@@ -66,6 +70,9 @@ public class serviceForSlave implements Runnable{
 				msg = (message)o;
 				switch(msg.getCommand()) {
 					case "C":
+						synchronized(pm.sid) {
+							msg.setSid(pm.sid);
+						}
 						pm.addSlave(this);
 						writeToClient(msg);
 						break;
