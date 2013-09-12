@@ -10,9 +10,12 @@ public class TransactionalFileOutputStream extends OutputStream implements Seria
 	/**
 	 * 
 	 */
-	private static final long serialVersionUID = 237544828305277844L;
-	String fileName;
-	long position;
+	private static final long serialVersionUID = -4967310387767452678L;
+	private String fileName;
+	private long position;
+	
+	private transient RandomAccessFile file;
+	boolean migrated;
 
 	private RandomAccessFile openFile() throws IOException {
 		RandomAccessFile file = new RandomAccessFile(fileName, "rws");
@@ -20,37 +23,53 @@ public class TransactionalFileOutputStream extends OutputStream implements Seria
 		return file;
 	}
 
-	public TransactionalFileOutputStream(String _fileName, boolean temp) {
+	public TransactionalFileOutputStream(String _fileName, boolean temp) throws IOException {
 		this.fileName = _fileName;
 		this.position = 0;
+		this.migrated = temp;
+		this.file = openFile();
 	}
-
-	/*Writes a single byte to the file*/
+	
+	public void setMigrated(boolean value) {
+		migrated = value;
+	}
+	
+	public void closeFile() throws IOException {
+		file.close();
+	}
+	
 	@Override
 	public void write(int b) throws IOException {
-		RandomAccessFile f = openFile();
-		f.write(b);
-		f.close();
+		if(migrated) {
+			file = openFile();
+			migrated = false;
+		}
+		file.write(b);
+		//file.close();
 
 		position++;
 	}
 
-	/*Writes b.length bytes of b to the file*/
 	@Override
 	public void write(byte[] b) throws IOException {
-		RandomAccessFile f = openFile();
-		f.write(b);
-		f.close();
+		if(migrated) {
+			file = openFile();
+			migrated = false;
+		}
+		file.write(b);
+		//f.close();
 
 		position += b.length;
 	}
 
-	/*Writes len bytes from b starting at b[off]*/
 	@Override
 	public void write(byte[] b, int off, int len) throws IOException {
-		RandomAccessFile f = openFile();
-		f.write(b, off, len);
-		f.close();
+		if(migrated) {
+			file = openFile();
+			migrated = false;
+		}
+		file.write(b, off, len);
+		//f.close();
 
 		position += len;
 	}

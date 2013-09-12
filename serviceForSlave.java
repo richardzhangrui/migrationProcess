@@ -70,10 +70,11 @@ public class serviceForSlave implements Runnable{
 				msg = (message)o;
 				switch(msg.getCommand()) {
 					case "C":
-						synchronized(pm.sid) {
-							msg.setSid(pm.sid);
-						}
+//						synchronized(pm.sid) {
+//							msg.setSid(pm.sid);
+//						}
 						pm.addSlave(this);
+						msg.setSid(this.sid);
 						writeToClient(msg);
 						break;
 					case "R":
@@ -89,6 +90,9 @@ public class serviceForSlave implements Runnable{
 				}
 			} catch (IOException e){ 
 				System.err.printf("ServiceForSlave: addr %s fail to read or write object!\n", slaveAddr.toString());
+				System.err.printf("ServiceFOrSlave: addr %s disconnected!\n", slaveAddr.toString());
+				pm.removeSlave_ts(this.sid);
+				this.stopService();
 			} catch (ClassNotFoundException e) {
 				// TODO Auto-generated catch block
 				System.err.printf("ServiceForSlave: addr %s Unrecoginzed object read!\n", slaveAddr.toString());

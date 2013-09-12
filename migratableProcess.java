@@ -8,4 +8,7 @@ public interface migratableProcess extends Runnable, Serializable{
 	void resume();
 	void terminate();
 	String toString();
+	
+	TransactionalFileInputStream getInput();
+	TransactionalFileOutputStream getOutput();
 }

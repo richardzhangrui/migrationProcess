@@ -64,9 +64,12 @@ public class GrepProcess implements migratableProcess
 		} catch (IOException e) {
 			System.out.println ("GrepProcess: Error: " + e);
 		}
+		try {
+			getInput().closeFile();
+			getOutput().closeFile();
+		} catch (IOException e) {
+		}
 
-
-		suspending = false;
 	}
 
 	public void suspend()
@@ -89,6 +92,18 @@ public class GrepProcess implements migratableProcess
 	public void terminate()
 	{
 		isTerminate = true;	
+	}
+
+	@Override
+	public TransactionalFileInputStream getInput() {
+		// TODO Auto-generated method stub
+		return this.inFile;
+	}
+
+	@Override
+	public TransactionalFileOutputStream getOutput() {
+		// TODO Auto-generated method stub
+		return this.outFile;
 	}
 
 }

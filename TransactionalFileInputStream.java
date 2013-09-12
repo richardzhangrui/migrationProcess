@@ -3,19 +3,27 @@
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.RandomAccessFile;
 import java.io.Serializable;
 
 public class TransactionalFileInputStream extends InputStream implements Serializable {
+	
 	/**
 	 * 
 	 */
-	private static final long serialVersionUID = -4452549782932382119L;
-	String fileName;
-	long position;
+	private static final long serialVersionUID = -8592574375810366902L;
+	private String fileName;
+	private long position;
+	
+	private transient FileInputStream file;
+	private boolean migrated;
+	
 
-	public TransactionalFileInputStream(String _fileName) {
+	public TransactionalFileInputStream(String _fileName) throws IOException {
+		this.migrated = false;
 		this.fileName = _fileName;
 		this.position = 0;
+		file = openFile();
 	}
 
 
@@ -24,15 +32,26 @@ public class TransactionalFileInputStream extends InputStream implements Seriali
 		fs.skip(position);
 		return fs;
 	}
+	
+	public void setMigrated(boolean value) {
+		migrated = value;
+	}
+	
+	public void closeFile() throws IOException {
+		file.close();
+	}
 
 	/*Reads a single byte from the input stream
 	*/
 	@Override
 	public int read() throws IOException {
 
-		FileInputStream fs = openFile();
-		int retVal = fs.read();
-		fs.close();
+		if(migrated) {
+			file = openFile();
+			migrated = false;
+		}
+		int retVal = file.read();
+		//file.close();
 
 		if (retVal != -1)
 			position += 1;
@@ -40,13 +59,14 @@ public class TransactionalFileInputStream extends InputStream implements Seriali
 		return retVal;
 	}
 
-	/*Reads up to b.length bytes of data from the input stream
-	*/
 	@Override
 	public int read(byte[] b) throws IOException  {
-		FileInputStream fs = openFile();
-		int retVal = fs.read(b);
-		fs.close();
+		if(migrated) {
+			file = openFile();
+			migrated = false;
+		}
+		int retVal = file.read(b);
+		//file.close();
 
 		if (retVal != -1)
 			position += retVal;
@@ -54,13 +74,14 @@ public class TransactionalFileInputStream extends InputStream implements Seriali
 		return retVal;
 	}
 
-	/*Reads len bytes into b starting at b[off]
-	*/
 	@Override
 	public int read(byte[] b, int off, int len) throws IOException  {
-		FileInputStream fs = openFile();
-		int retVal = fs.read(b, off, len);
-		fs.close();
+		if(migrated) {
+			file = openFile();
+			migrated = false;
+		}
+		int retVal = file.read(b, off, len);
+		//file.close();
 
 		if (retVal != -1)
 			position += retVal;

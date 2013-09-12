@@ -11,6 +11,7 @@ import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.Map;
@@ -278,18 +279,32 @@ public class slaveNode {
 				@Override
 				public void run() {
 					// TODO Auto-generated method stub
+					
+					ArrayList<Integer> ToBeDelete = new ArrayList<Integer>();
+					
 					for (Map.Entry<Integer, Thread> entry : pidToThread.entrySet()) {
 					    Integer key = entry.getKey();
 					    Thread value = entry.getValue();
 					    if (!value.isAlive()) {
-					    	removePidToThread_ts(key);
-					    	removeProcess_ts(key);
-						decreaseLoad_ts(load);
-						message msg = new message(sid, key, null, "T");
-						writeToMaster(msg);
-						System.out.printf("Removed dead process %d!\n",key);
+					    	ToBeDelete.add(key);
+//					    	removePidToThread_ts(key);
+//					    	removeProcess_ts(key);
+//							decreaseLoad_ts(load);
+//							message msg = new message(sid, key, null, "T");
+//							writeToMaster(msg);
+//							System.out.printf("Removed dead process %d!\n",key);
 					    }
 					}
+					
+					for (Integer i : ToBeDelete) {
+						removePidToThread_ts(i);
+				    	removeProcess_ts(i);
+						decreaseLoad_ts(load);
+						message msg = new message(sid, i, null, "T");
+						writeToMaster(msg);
+						System.out.printf("Removed dead process %d!\n",i);
+					}
+					
 				}}, 5000, 5000);			
 			}
 	
@@ -352,6 +367,8 @@ public class slaveNode {
 					}
 				} catch (IOException e){ 
 					System.err.printf("Failed to read or write object!\n");
+					System.err.println("Disconnected from master!");
+					System.exit(0);
 				} catch (ClassNotFoundException e) {
 					System.err.printf("Unrecoginzed object!\n");
 					e.printStackTrace();

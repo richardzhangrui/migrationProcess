@@ -5,6 +5,7 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.Map;
@@ -44,6 +45,7 @@ public class processManager {
 		this.sid = 0;
 		this.pid = 0;
 		this.port = port;
+		this.path = "ruiz1+jingg";
 		//threads = new LinkedList<Thread>();
 		suspendedProcess = new LinkedList<Integer>();
 		//slaves = new LinkedList<serviceForSlave>();
@@ -101,7 +103,7 @@ public class processManager {
 
 	private void printSlaveLoad() {
 		System.out.println("SlaveID\tSlaveIP\tSlaveLoad");
-       		System.out.printf("[%d]\t%s\t%d\n",this.ID, "localhost", sidToLoad.get(ID));
+       		System.out.printf("[%d]\t%s\t%d\n",ID, "localhost", sidToLoad.get(ID));
 		for (Map.Entry<Integer, serviceForSlave> entry : sidToSlave.entrySet()) {
 		    Integer key = entry.getKey();
 		    serviceForSlave value = entry.getValue();
@@ -170,6 +172,45 @@ public class processManager {
 		}
 		
 		return true;
+	}
+	
+	public void removeSlave_ts(Integer sid) {
+		
+		ArrayList<Integer> tobedelete = new ArrayList<Integer>();
+		
+		for(Map.Entry<Integer, Integer> entry : pidToSlave.entrySet()) {
+			Integer key = entry.getKey();
+			Integer value = entry.getValue();
+			if(value.equals(sid)){
+				tobedelete.add(key);
+//				removeProcess_ts(key);
+//				removePidToSlave_ts(key);
+//				removeSuspended_ts(key);
+			}
+		}
+		
+		for(Integer i : tobedelete) {
+			removeProcess_ts(i);
+			removePidToSlave_ts(i);
+			removeSuspended_ts(i);
+		}
+		
+		
+		removeSidToPids_ts(sid);
+		removeSidToLoad_ts(sid);
+		removeSidToSlave_ts(sid);
+	}
+	
+	private void removeSidToLoad_ts(Integer sid) {
+		synchronized(sidToLoad) {
+			sidToLoad.remove(sid);
+		}
+	}
+	
+	private void removeSidToSlave_ts(Integer sid) {
+		synchronized(sidToSlave) {
+			sidToSlave.remove(sid);
+		}
 	}
 	
 	private void addSidToPids_ts(Integer sid, LinkedList<Integer> pids) {
@@ -342,6 +383,9 @@ public class processManager {
 					//remove the process from the suspendedProcess list
 				}
 				else {
+					
+					p.getInput().setMigrated(true);
+					p.getOutput().setMigrated(true);
 					addSuspended_ts(msg.getPid());
 					updateProcess_ts(msg.getPid(), p);
 					msg.setCommand("E");
@@ -414,6 +458,9 @@ public class processManager {
 			removePidFromSidList_ts(csid, mpid);
 			migratableProcess p = pidToProcess.get(mpid);
 			p.suspend();
+			
+			p.getInput().setMigrated(true);
+			p.getOutput().setMigrated(true);
 			suspendProcess(mpid, p);
 			removePidToSlave_ts(mpid);
 			message m = new message(msid, mpid, p, "E");
@@ -432,20 +479,34 @@ public class processManager {
 
 			@Override
 			public void run() {
+				
+				ArrayList<Integer> toBeDelete = new ArrayList<Integer>();
 				// TODO Auto-generated method stub
 				for (Map.Entry<Integer, Thread> entry : pidToThread.entrySet()) {
 				    Integer key = entry.getKey();
 				    Thread value = entry.getValue();
 				    if (!value.isAlive()) {
-				    	removePidToThread_ts(key);
-				    	removeProcess_ts(key);
-					Integer rsid = pidToSlave.get(key);
-					removePidFromSidList_ts(rsid,key);
-					decreaseLoad_ts(rsid);
-				    	removePidToSlave_ts(key);
-					System.out.printf("Removed dead process %d!",key);
+				    	toBeDelete.add(key);
+//				    	removePidToThread_ts(key);
+//				    	removeProcess_ts(key);
+//						Integer rsid = pidToSlave.get(key);
+//						removePidFromSidList_ts(rsid,key);
+//						decreaseLoad_ts(rsid);
+//				    	removePidToSlave_ts(key);
+//				    	System.out.printf("Removed dead process %d!",key);
 				    }
 				}
+				
+				for(Integer i : toBeDelete) {
+					removePidToThread_ts(i);
+			    	removeProcess_ts(i);
+					Integer rsid = pidToSlave.get(i);
+					removePidFromSidList_ts(rsid,i);
+					decreaseLoad_ts(rsid);
+			    	removePidToSlave_ts(i);
+			    	System.out.printf("Removed dead process %d!",i);
+				}
+				
 			}}, 5000, 5000);		
 	}
 	
@@ -483,6 +544,12 @@ public class processManager {
 				    		if(!isSuspended(cpid)) {
 				    			migrateProcess(key,bestsid,cpid);
 				    			System.out.printf("Migrate process %d from Slave %d to Slave %d\n", cpid, key, bestsid);
+				    			try {
+									Thread.sleep(1000);
+								} catch (InterruptedException e) {
+									// TODO Auto-generated catch block
+									e.printStackTrace();
+								}
 				    		}
 						index++;
 				    	}
@@ -783,6 +850,8 @@ public class processManager {
 					}
 				}
 				else {
+					newProcess.getInput().setMigrated(true);
+					newProcess.getOutput().setMigrated(true);
 					message msg = new message(sid, this.pid, newProcess, "R");
 					sidToSlave.get(sid).writeToClient(msg);
 				}
