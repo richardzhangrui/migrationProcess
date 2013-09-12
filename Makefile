@@ -14,6 +14,7 @@ CLASSES = \
 	processManager.java \
 	slaveNode.java \
 	GrepProcess.java \
+	CharClassCount.java \
 
 default: classes
 
