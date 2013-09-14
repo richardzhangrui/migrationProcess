@@ -169,16 +169,16 @@ public class slaveNode {
 						t.start();
 						p.resume();
 						
-						addPidToThread_ts(msg.getPid(), t);
-						addProcess_ts(msg.getPid(),p);
+						addPidToThread_ts(rpid, t);
+						addProcess_ts(rpid,p);
 						increaseLoad_ts(this.load);
 						this.writeToMaster(msg);
-						System.out.println("Resume process done!");
+						System.out.println("Resume process "+rpid+" done!");
 					}
 
 				}
 				else if(!isSuspended(rpid)) {
-					System.out.println("Resume process failed: this process is not suspended!");
+					System.out.println("Resume process failed: process "+rpid+" is not suspended!");
 				}
 				else {
 					migratableProcess p = pidToProcess.get(rpid);
@@ -188,65 +188,66 @@ public class slaveNode {
 					removeSuspended_ts(rpid);
 					increaseLoad_ts(this.load);
 					this.writeToMaster(msg);
-					System.out.println("Resume process done!");
+					System.out.println("Resume process "+rpid+" done!");
 				}
 				break;
 
 			case "R":
+				int runpid=msg.getPid();
 				if(msg.getProcess() != null) {
 					migratableProcess p = msg.getProcess();
 					Thread t = new Thread(p);
 					t.start();
-					addPidToThread_ts(msg.getPid(), t);
-					addProcess_ts(msg.getPid(),p);
+					addPidToThread_ts(runpid, t);
+					addProcess_ts(runpid,p);
 					increaseLoad_ts(this.load);
 					this.writeToMaster(msg);
-					System.out.println("Run process done!");
+					System.out.println("Run process "+runpid+" done!");
 				}
 				break;
 
 			case "M":
 				int mpid=msg.getPid();
 				if(!hasProcess(mpid)) {
-					System.out.println("Migrate process failed: there's no process running with this processID!");
+					System.out.println("Migrate process failed: there's no process running with processID: "+mpid);
 				}
 				else if(isSuspended(mpid)) {
-					System.out.println("Migrate process failed: This process is suspended!");
+					System.out.println("Migrate process failed: process "+mpid+" is suspended!");
 				}
 				else {
 					migratableProcess p = pidToProcess.get(mpid);
 					p.suspend();
 					suspendProcess(mpid, p);
 					decreaseLoad_ts(this.load);
-					message newMsg=new message(msg.getSid(),msg.getPid(),p,"M");
+					message newMsg=new message(msg.getSid(),mpid,p,"M");
 					this.writeToMaster(newMsg);
-					System.out.println("Migrate process done!");
+					System.out.println("Migrate process "+mpid+" done!");
 				}
 				break;
 
 			case "S":
 				int spid=msg.getPid();
 				if(!hasProcess(spid)) {
-					System.out.println("Suspend process failed: there's no process running with this processID!");
+					System.out.println("Suspend process failed: there's no process running with this processID: "+spid);
 				}
 				else if(isSuspended(spid)) {
-					System.out.println("Suspend process failed: This process is suspended!");
+					System.out.println("Suspend process failed: process "+spid+" is suspended!");
 				}
 				else {
 					migratableProcess p = pidToProcess.get(spid);
 					p.suspend();
 					suspendProcess(spid, p);
 					decreaseLoad_ts(this.load);
-					message newMsg=new message(msg.getSid(),msg.getPid(),p,"S");
+					message newMsg=new message(msg.getSid(),spid,p,"S");
 					this.writeToMaster(newMsg);
-					System.out.println("Suspend process done!");
+					System.out.println("Suspend process "+spid+" done!");
 				}
 				break;
 
 			case "T":
 				int tpid=msg.getPid();
 				if(!hasProcess(tpid)) {
-					System.out.println("Terminate process failed: there's no process running with this processID!");
+					System.out.println("Terminate process failed: there's no process running with this processID: "+tpid);
 				}
 				else{
 					//Integer tsid = pidToSlave.get(tpid);
@@ -259,7 +260,7 @@ public class slaveNode {
 					removePidToThread_ts(tpid);
 					removeProcess_ts(tpid);
 					this.writeToMaster(msg);
-					System.out.println("Terminate process done!");
+					System.out.println("Terminate process "+tpid+" done!");
 				}
 
 				break;
@@ -353,6 +354,7 @@ public class slaveNode {
 					switch(msg.getCommand()) {
 						case "C":
 							sn.sid = msg.getSid();
+							System.out.println("Connected to master!");
 							break;
 						case "R":
 						case "M":
