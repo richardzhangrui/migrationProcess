@@ -1,7 +1,7 @@
 15-640 Project1 Report
 
 Name 1: Rui Zhang
-AndrewID 1: 
+AndrewID 1: ruiz1
 Name 2: Jing Gao
 AndrewID 2: jinggao
 

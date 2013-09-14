@@ -15,6 +15,7 @@ CLASSES = \
 	slaveNode.java \
 	GrepProcess.java \
 	CharClassCount.java \
+	quickSortProcess.java \
 
 default: classes
 

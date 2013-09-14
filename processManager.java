@@ -45,7 +45,7 @@ public class processManager {
 		this.sid = 0;
 		this.pid = 0;
 		this.port = port;
-		this.path = "ruiz1+jingg";
+		this.path = "ruiz1+jinggao";
 		//threads = new LinkedList<Thread>();
 		suspendedProcess = new LinkedList<Integer>();
 		//slaves = new LinkedList<serviceForSlave>();
