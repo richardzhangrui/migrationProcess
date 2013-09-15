@@ -1,14 +1,16 @@
 import java.io.PrintStream;
 import java.io.EOFException;
 import java.io.DataInputStream;
-import java.io.InputStreamReader;
-import java.io.BufferedReader;
 import java.io.IOException;
 import java.lang.Thread;
 import java.lang.InterruptedException;
 
 public class GrepProcess implements migratableProcess
 {
+	/**
+	 * 
+	 */
+	private static final long serialVersionUID = -1216123251987660620L;
 	private TransactionalFileInputStream  inFile;
 	private TransactionalFileOutputStream outFile;
 	private String query;

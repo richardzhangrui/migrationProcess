@@ -1,5 +1,3 @@
-
-
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -12,8 +10,50 @@ import java.util.Map;
 import java.util.Timer;
 import java.util.TimerTask;
 
-
-
+/**
+ * ProcessManager is the main class for the master program in process migration. 
+ * It creates the managerServer to accept slaves' connections and allows serviceForSlave
+ * to use its corresponding methods to serve for the slaves. 
+ * It is responsible for the following jobs:
+ * <ul>
+ * <li>Commands input and parse
+ * <li>Create new process
+ * <li>Migrate process
+ * <li>Suspend process
+ * <li>Resume process
+ * <li>Terminate process
+ * <li>Run process
+ * <li>Reap process
+ * <li>Keep slaves load balance
+ * <li>Main the process and slave information
+ * <li>Print corresponding process and slave information
+ * </ul>
+ * <p>
+ * A lot of work including migrate, suspend, resume and so on is done through a 
+ * message mechanism. If some slave is chosen to be do this work, the processManager
+ * sends a corresponding message to this slave and update the process and slave 
+ * information when having received the feedback.
+ * <p>
+ * The processManager can run process on its own if there's no other slaves connected 
+ * to it. Under such circumstances, it works like a single machine system. Or if all 
+ * the other slaves' loads are too heavy. The processManager can share the work. The 
+ * initial load of processManager is 10 and every process will increase the load by 1.
+ * ProcessManger will always choose the slave with smallest load to run the process.
+ * In order to conveniently use the master to run process, we have distributed it a fake slave
+ * id which is -1.
+ * <p>
+ * When the processManager is running, users can migrate processes manually or leave
+ * the work to load balance part of the manager.
+ * <p>
+ * Every process running on this system has a unique process id and is distributed 
+ * by the processManager. Similarly, every slave connecting to the master also has 
+ * a unique slave id. 
+ * 
+ * @author      Rui Zhang
+ * @author      Jing Gao
+ * @version     1.0, 09/15/2013
+ * @since       1.0
+ */
 public class processManager {
 	public Integer sid;
 	public Integer pid;
@@ -28,10 +68,8 @@ public class processManager {
 	
 	private Thread connectThread;
 	
-	//private LinkedList<Thread> threads;
+
 	private volatile LinkedList<Integer> suspendedProcess;
-	//private LinkedList<Integer> terminatedProcess;
-	//private LinkedList<serviceForSlave> slaves;
 	private volatile HashMap<Integer, migratableProcess> pidToProcess;
 	private volatile HashMap<Integer, Integer> pidToSlave;
 	private volatile HashMap<Integer, serviceForSlave> sidToSlave;
@@ -40,16 +78,19 @@ public class processManager {
 	
 	private volatile HashMap<Integer, Thread>  pidToThread; //currently run on this node's process and its corresponding threads
 	
+	/** 
+     * Initiate the process manager with the corresponding port number
+     *
+     * @param port      the prot the processManager will run on
+     * @since           1.0
+     */
 	public processManager(int port) {
 		this.load = 10;
 		this.sid = 0;
 		this.pid = 0;
 		this.port = port;
 		this.path = "ruiz1+jinggao";
-		//threads = new LinkedList<Thread>();
 		suspendedProcess = new LinkedList<Integer>();
-		//slaves = new LinkedList<serviceForSlave>();
-		//terminatedProcess = new LinkedList<Integer>();
 		pidToProcess = new HashMap<Integer, migratableProcess>();
 		pidToSlave = new HashMap<Integer, Integer>();
 		sidToSlave = new HashMap<Integer, serviceForSlave>();
@@ -61,6 +102,13 @@ public class processManager {
 		pidToThread = new HashMap<Integer, Thread>();
 	}
 	
+	/** 
+     * Printe the suspended processes' information
+     * <p>
+     * the information printed format and order is "ProcessID ProcessName ProcessStatus SlaveID SlaveIP"
+     * 
+     * @since           1.0
+     */
 	private void printSuspended() {
 		System.out.println("Suspended Processes:");
 		System.out.println("ProcessID\tProcessName\tProcessStatus\tSlaveID\tSlaveIP");
@@ -76,7 +124,14 @@ public class processManager {
 			System.out.printf("[%d]\t[%s]\tsuspended\t(%d)\t%s\n",spid, pidToProcess.get(spid).toString(),slaveid,address);
 		}
 	}
-
+	
+	/** 
+     * Print all the processes' information
+     * <p>
+     * the information printed format and order is "ProcessID ProcessName ProcessStatus SlaveID SlaveIP"
+     *
+     * @since           1.0
+     */
 	private void printProcesses() {
 		System.out.println("ProcessID\tProcessName\tProcessStatus\tSlaveID\tSlaveIP");
 		for (Map.Entry<Integer, migratableProcess> entry : pidToProcess.entrySet()) {
@@ -100,7 +155,14 @@ public class processManager {
        		    System.out.printf("[%d]\t[%s]\t%s\t(%s)\t%s\n",key, value.toString(), status, slaveid, address);
 		}
 	}
-
+	
+	/** 
+     * Print all the slaves' load information
+     * <p>
+     * The print format and order should be "SlaveID SlaveIP SlaveLoad".
+     *
+     * @since           1.0
+     */
 	private void printSlaveLoad() {
 		System.out.println("SlaveID\tSlaveIP\tSlaveLoad");
        		System.out.printf("[%d]\t%s\t%d\n",ID, "localhost", sidToLoad.get(ID));
@@ -112,7 +174,16 @@ public class processManager {
 		}
 		
 	}
-
+	
+	/** 
+     * Print the information of one slave with a specific slave id
+     * <p>
+     * The print format and order is "SlaveID SlaveIP SlaveLoad" and its processes information
+     * followed
+     *
+     * @param csid      the slave id of the slave whose information will be output
+     * @since           1.0
+     */
 	private void printSlaveInfo(Integer csid) {
 		String address;
 		if(csid.equals(ID)) {
@@ -137,34 +208,47 @@ public class processManager {
 		}	
 	}
 	
+	/** 
+     * Get the current port number of the processManager
+     *
+     * @since           1.0
+     */
 	public int getPort() {
-		// TODO Auto-generated method stub
 		return port;
 	}
 	
+	/** 
+     * Set the current port number of the processManager
+     *
+     * @param port      the port number going to be set
+     * @since           1.0
+     */
 	public void setPort(int port) {
 		this.port = port;
 	}
 	
-	public boolean addSlave(serviceForSlave service) {
+	/** 
+     * When a slave is connected to the master, it will be distributed a 
+     * slave id and the master will record the information in its scope.
+     * <p>
+     * This method will update three hashmaps including sidToSlave,
+     * sidToLoad, sidToPid and all these updates are under thread safe
+     * mode
+     * 
+     *
+     * @param service   the serviceForSlave object that serve the slave    
+     * @return          <code>true</code> if the slave is added successfully
+     *                  <code>false</code> otherwise.
+     * @see             serviceForSlave
+     * @since           1.0
+     */
+	public boolean addSlave_ts(serviceForSlave service) {
 		if(service == null)
 			return false;
 		
-//		slaveHost tmpslave = new slaveHost();
-//		tmpslave.setAddr(service);
-		
-		//synchronized(slaves) {
-		//	slaves.add(service);
-		//}
 		
 		synchronized(sid) {
-//			synchronized(sidToSlave) {
-//				sidToSlave.put(sid, service);
-//			}
 			addSidToSlave_ts(sid, service);
-//			synchronized(sidToLoad) {
-//				sidToLoad.put(sid, 0);
-//			}
 			addSidToLoad_ts(sid, 0);
 			addSidToPids_ts(sid,new LinkedList<Integer>());
 			service.setSid(sid);
@@ -174,6 +258,18 @@ public class processManager {
 		return true;
 	}
 	
+	/** 
+     * When a slave is disconnected from the master, its information will 
+     * be removed from the master
+     * <p>
+     * This method will update five hashmaps including pidToSlave, sidToSlave,
+     * sidToLoad, sidToPid, pidToProcess and all these updates are under thread 
+     * safe mode
+     * 
+     *
+     * @param sid       the slave id of the slave that will be deleted   
+     * @since           1.0
+     */
 	public void removeSlave_ts(Integer sid) {
 		
 		ArrayList<Integer> tobedelete = new ArrayList<Integer>();
@@ -183,9 +279,6 @@ public class processManager {
 			Integer value = entry.getValue();
 			if(value.equals(sid)){
 				tobedelete.add(key);
-//				removeProcess_ts(key);
-//				removePidToSlave_ts(key);
-//				removeSuspended_ts(key);
 			}
 		}
 		
@@ -201,121 +294,265 @@ public class processManager {
 		removeSidToSlave_ts(sid);
 	}
 	
+	/** 
+     * remove the the entry with slave id "sid" from the sidToLoad hashmap 
+     * thread safely
+     * 
+     * @param sid       the slave id of the slave that will be deleted   
+     * @since           1.0
+     */
 	private void removeSidToLoad_ts(Integer sid) {
 		synchronized(sidToLoad) {
 			sidToLoad.remove(sid);
 		}
 	}
 	
+	/** 
+     * remove the the entry with slave id "sid" from the sidToSlave hashmap 
+     * thread safely
+     * 
+     * @param sid       the slave id of the slave that will be deleted   
+     * @since           1.0
+     */
 	private void removeSidToSlave_ts(Integer sid) {
 		synchronized(sidToSlave) {
 			sidToSlave.remove(sid);
 		}
 	}
 	
+	/** 
+     * add a the entry with slave id "sid" to the sidToLoad hashmap 
+     * thread safely
+     * 
+     * @param sid       the slave id of the slave that will be added
+     * @param pids		the list recording the process running on this slave   
+     * @since           1.0
+     */
 	private void addSidToPids_ts(Integer sid, LinkedList<Integer> pids) {
+	
 		synchronized(sidToPids) {
 			sidToPids.put(sid, pids);
 		}
 	}
 	
+	/** 
+     * remove the the entry with slave id "sid" from the sidToPids hashmap 
+     * thread safely
+     * 
+     * @param sid       the slave id of the slave that will be deleted   
+     * @since           1.0
+     */
 	private void removeSidToPids_ts(Integer sid) {
 		synchronized(sidToPids) {
 			sidToPids.remove(sid);
 		}
 	}
 	
+	/** 
+     * add a entry with process id "pid" to the process list of the specific slave id "sid" 
+     * thread safely
+     * 
+     * @param sid       the slave id of the slave whose list will be updated
+     * @param pid		the process id of the process that will be added to the list 
+     * @since           1.0
+     */
 	private void addPidToSidList_ts(Integer sid, Integer pid) {
 		synchronized(sidToPids.get(sid)) {
 			sidToPids.get(sid).add(pid);
 		}
 	}
 	
+	
+	/** 
+     * remove the entry with process id "pid" from the process list of the specific slave id "sid" 
+     * thread safely
+     * 
+     * @param sid       the slave id of the slave whose list will be updated
+     * @param pid		the process id of the process that will be removed from the list 
+     * @since           1.0
+     */
 	private void removePidFromSidList_ts(Integer sid, Integer pid) {
 		synchronized(sidToPids.get(sid)) {
 			sidToPids.get(sid).remove(pid);
 		}
 	}
 	
+	/** 
+     * add a entry with slave id "sid" to the sidToSlave hashmap thread safely
+     * 
+     * @param sid       the slave id of the slave whose hashmap will be updated
+     * @param service	the serviceForSlave which serves the slave with slave id sid 
+     * @since           1.0
+     */
 	private void addSidToSlave_ts(Integer sid, serviceForSlave service) {
 		synchronized(sidToSlave) {
 			sidToSlave.put(sid, service);
 		}
 	}
 	
+	/** 
+     * add a entry with slave id "sid" to the sidToLoad hashmap thread safely
+     * 
+     * @param sid       the slave id of the slave whose hashmap will be updated
+     * @param load 		the slave's initial load
+     * @since           1.0
+     */
 	private void addSidToLoad_ts(Integer sid, Integer load) {
 		synchronized(sidToLoad) {
 			sidToLoad.put(sid, load);
 		}
 	}
 	
+	/** 
+     * add a entry with process id "pid" to the pidToSlave hashmap thread safely
+     * 
+     * @param pid       the process id of the process whose hashmap will be updated
+     * @param sid 		the slave's slave id
+     * @since           1.0
+     */
 	private void addPidToSlave_ts(Integer pid, Integer sid) {
 		synchronized(pidToSlave) {
 			pidToSlave.put(pid, sid);
 		}
 	}
 	
+	/** 
+     * remove a entry with process id "pid" from the suspendedProcess list thread safely
+     * 
+     * @param pid       the process id of the process whose list will be updated
+     * @since           1.0
+     */
 	private void removeSuspended_ts(Integer pid) {
 		synchronized(suspendedProcess){
-			//for(int i = 0; i < suspendedProcess.size(); i++) {
-			//	if(pid.equals(suspendedProcess.get(i))) {
-			//		suspendedProcess.remove(i);
-			//		break;
-			//	}
-			//}
 			suspendedProcess.remove(pid);
 		}
 		return;
 	}
 	
+	/** 
+     * remove a entry with process id "pid" from the pidToSlave hashmap thread safely
+     * 
+     * @param pid       the process id of the process whose hashmap will be updated
+     * @since           1.0
+     */
 	private void removePidToSlave_ts(Integer pid) {
 		synchronized(pidToSlave) {
 			pidToSlave.remove(pid);
 		}
 	}
 	
+	/** 
+     * add a entry with process id "pid" to the suspendedProcess list thread safely
+     * 
+     * @param pid       the process id of the process whose list will be updated
+     * @since           1.0
+     */
 	private void addSuspended_ts(Integer pid) {
 		synchronized(suspendedProcess) {
 			suspendedProcess.add(pid);
 		}
 	}
 	
+	/** 
+     * increase the load of slave with slave id "sid" by 1
+     * 
+     * @param sid       the slave id of the slave whose load will increase
+     * @since           1.0
+     */
 	private void increaseLoad_ts(Integer sid) {
 		addSidToLoad_ts(sid, sidToLoad.get(sid) + 1);
 	}
 	
+	/** 
+     * decrease the load of slave with slave id "sid" by 1
+     * 
+     * @param sid       the slave id of the slave whose load will decrease
+     * @since           1.0
+     */
 	private void decreaseLoad_ts(Integer sid) {
 		addSidToLoad_ts(sid, sidToLoad.get(sid) - 1);
 	}
 	
+	/** 
+     * remove a entry with process id "pid" from the pidToProcess hashmap thread safely
+     * 
+     * @param pid       the process id of the process whose hashmap will be updated
+     * @since           1.0
+     */
 	private void removeProcess_ts(Integer pid) {
 		synchronized(pidToProcess) {
 			pidToProcess.remove(pid);
 		}
 	}
 	
+	/** 
+     * add a entry with process id "pid" to the pidToProcess hashmap thread safely
+     * 
+     * @param pid       the process id of the process whose hashmap will be updated
+     * @since           1.0
+     */
 	private void addProcess_ts(Integer pid, migratableProcess p) {
 		synchronized(pidToProcess) {
 			pidToProcess.put(pid, p);
 		}
 	}
 	
+	/** 
+     * update a entry with process id "pid" in the pidToProcess hashmap thread safely
+     * 
+     * @param pid       the process id of the process whose hashmap will be updated
+     * @since           1.0
+     */
 	private void updateProcess_ts(Integer pid, migratableProcess p) {
 		addProcess_ts(pid, p);
 	}
 	
+	/** 
+     * add a entry with process id "pid" in the pidToThread hashmap thread safely
+     * 
+     * @param pid       the process id of the process whose hashmap will be updated
+     * @since           1.0
+     */
 	private void addPidToThread_ts(Integer pid, Thread t) {
 		synchronized(pidToThread) {
 			pidToThread.put(pid, t);
 		}
 	}
 	
+	/** 
+     * remove a entry with process id "pid" from the pidToThread hashmap thread safely
+     * 
+     * @param pid       the process id of the process whose hashmap will be updated
+     * @since           1.0
+     */
 	private void removePidToThread_ts(Integer pid) {
 		synchronized(pidToThread) {
 			pidToThread.remove(pid);
 		}
 	}
 	
+	/** 
+     * Do corresponding job according to the message received
+     * <p>
+     * When receiving a message, the master should update the information it maintains 
+     * and maybe forward the message to slaves.
+     * <p>
+     * The definition of messages are listed below:
+     * <ul>
+     * <li>E:resume process
+     * <li>R:run process
+     * <li>M:migrate process
+     * <li>S:suspend process
+     * <li>T:terminate process
+     * </ul>
+     * 
+     *
+     * @param msg       the message received
+     * @param service   the serviceForSlave which serves for the corresponding slave
+     * @see             message
+     * @see             serviceForSlave
+     * @since           1.0
+     */
 	public void job(message msg, serviceForSlave service) {
 		if(service == null)
 		{
@@ -331,35 +568,16 @@ public class processManager {
 				System.out.printf("Process %d resumed on Slave %d!\n",msg.getPid(),msg.getSid());
 				break;
 			case "R":
-				//slaveHost tmpslave = new slaveHost();
-				//tmpslave.setAddr(slaveAddr);
-//				synchronized(pidToSlave) {
-//					pidToSlave.put(msg.getPid(), service.getSid());
-//				}
 				addPidToSlave_ts(msg.getPid(), msg.getSid());
 				addPidToSidList_ts(msg.getSid(),msg.getPid());
-//				synchronized(suspendedProcess) {
-//					//remove from suspendedProcess list
-//					removeSuspended(msg.getPid());
-//				}
-				//removeSuspended_ts(msg.getPid());
 				increaseLoad_ts(msg.getSid());
 				System.out.printf("Process %d ran on Slave %d!\n",msg.getPid(),msg.getSid());
 				break;
-//			case "FR":
-//				break;
 			case "M":
 				removePidFromSidList_ts(pidToSlave.get(msg.getPid()), msg.getPid());
 				decreaseLoad_ts(pidToSlave.get(msg.getPid()));
 				removePidToSlave_ts(msg.getPid());
 				migratableProcess p = msg.getProcess(); 
-				
-//				synchronized(pidToSlave) {
-//					pidToSlave.remove(msg.getPid());
-//				}
-//				synchronized(suspendedProcess) {
-//					suspendedProcess.add(msg.getPid());
-//				}
 				
 				if(msg.getSid().equals(ID)) {
 					
@@ -367,12 +585,6 @@ public class processManager {
 						Thread t = new Thread(p);
 						t.start();
 						p.resume();
-//						synchronized(pidToThread) {
-//							pidToThread.put(msg.getPid(),t);
-//						}
-//						synchronized(pidToSlave) {
-//						pidToSlave.put(msg.getPid(), ID);
-//					}
 
 						addPidToThread_ts(msg.getPid(), t);
 						addPidToSlave_ts(msg.getPid(), ID);
@@ -380,7 +592,6 @@ public class processManager {
 						increaseLoad_ts(ID);
 					}
 					
-					//remove the process from the suspendedProcess list
 				}
 				else {
 					
@@ -394,16 +605,7 @@ public class processManager {
 				System.out.printf("Process %d migrated to Slave %d!\n",msg.getPid(),msg.getSid());
 				break;
 			case "S":
-//				synchronized(pidToSlave) {
-//				pidToSlave.remove(msg.getPid());
-//			}
-//			synchronized(suspendedProcess) {
-//				suspendedProcess.add(msg.getPid());
-//			}
 				suspendProcess(msg.getPid(), msg.getProcess());
-				//removePidToSlave_ts(msg.getPid());
-				//addSuspended_ts(msg.getPid());
-				//decreaseLoad_ts(msg.getSid());
 				System.out.printf("Process %d suspended on Slave %d!\n",msg.getPid(),msg.getSid());
 				break;
 			case "T":
@@ -413,13 +615,6 @@ public class processManager {
 				if(!isSuspended(msg.getPid()))
 					decreaseLoad_ts(msg.getSid());
 				removeSuspended_ts(msg.getPid());
-				//service.stopService();
-//				synchronized(pidToSlave) {
-//					pidToSlave.remove(msg.getPid());
-//				}
-//				synchronized(pidToProcess) {
-//					pidToProcess.remove(msg.getPid());
-//				}
 				System.out.printf("Process %d terminated on Slave %d!\n",msg.getPid(),msg.getSid());
 				break;
 			default:
@@ -427,7 +622,15 @@ public class processManager {
 		}
 	
 	}
-
+	
+	/** 
+     * Choose the best slave which means the slave has the smallest load
+     * <p>
+     * If the master is the best slave, the function return -1
+     *
+     * @return          the slave id of the slave node whose node is smallest
+     * @since           1.0
+     */
 	public int chooseBestSlave() {
 		int min = ID;
 		int minLoad = sidToLoad.get(min);
@@ -445,14 +648,37 @@ public class processManager {
 		return min;
 	}
 	
+	/** 
+     * Suspend the process with process id spid and update the corresponding information
+     * <p>
+     * Because process may be migrated to other machines if suspended the process state 
+     * should be updated once suspending. Suspending a process will decrease the load of
+     * the current slave, so there's no reason to migrate a suspended process. That is, the
+     * suspended processes cannot be migrated
+     *
+     * @param spid		process id of the process that will be suspended
+     * @param p			process that will be suspended and updated
+     * @see	migratableProcess
+     * @since           1.0
+     */
 	private void suspendProcess(Integer spid, migratableProcess p) {
 		updateProcess_ts(spid, p);
 		decreaseLoad_ts(pidToSlave.get(spid));
-		//removePidToSlave_ts(spid);
-		//removePidToThread_ts(spid);
 		addSuspended_ts(spid);
 	}
 	
+	/** 
+     * Migrate the process with process id mpid from current slave with slave id csid to
+     * one other slave with slave id msid. In addition, relative information will be 
+     * updated in this function
+     *
+     * @param csid		the slave id of the slave where the process currently running 
+     * @param msid		the slave id of the slave where the process will be move
+     * @param mpid		the process id of the process which will be moved
+     * @see	migratableProcess
+     * @see message
+     * @since           1.0
+     */
 	private void migrateProcess(Integer csid, Integer msid, Integer mpid) {
 		if(csid.equals(ID)) {
 			removePidFromSidList_ts(csid, mpid);
@@ -472,6 +698,17 @@ public class processManager {
 		}
 	}
 	
+	/** 
+     * Start a timer which do jobs of reaping dead process
+     * <p>
+     * In order to decide whether the process is dead or not, the function will check
+     * if the thread responsible for running process is alive. If it is not alive, then
+     * add this process into a list, and after checking all threads, the dead processes
+     * will be removed. This delay to delete processes is to ensure the CoccurentModification
+     * Exception won't happen 
+     *
+     * @since           1.0
+     */
 	private void startReapTimer() {
 		//reap unalive theads
 		Timer reapDeadThread = new Timer();
@@ -487,13 +724,6 @@ public class processManager {
 				    Thread value = entry.getValue();
 				    if (!value.isAlive()) {
 				    	toBeDelete.add(key);
-//				    	removePidToThread_ts(key);
-//				    	removeProcess_ts(key);
-//						Integer rsid = pidToSlave.get(key);
-//						removePidFromSidList_ts(rsid,key);
-//						decreaseLoad_ts(rsid);
-//				    	removePidToSlave_ts(key);
-//				    	System.out.printf("Removed dead process %d!",key);
 				    }
 				}
 				
@@ -510,7 +740,19 @@ public class processManager {
 			}}, 5000, 5000);		
 	}
 	
-
+	/** 
+     * Start a timer which do load balance jobs
+     * <p>
+     * The function will first compute the average load of the whole system and if some slave's
+     * load is greater than the average, the function will serially pick one process on this
+     * slave to migrate to the optimal slave until the load is below the average or the best slave
+     * becomes itself or all the processes have been migrated. Every time one process has been 
+     * migrated, the function will sleep for 1s in order to wait for feedbacks from slaves to 
+     * update corresponding information. By doing this, it ensures the possible migration back
+     * and forth.
+     *
+     * @since           1.0
+     */
 	private void startBalanceTimer() {
 		Timer balanceSlave = new Timer();
 		balanceSlave.scheduleAtFixedRate(new TimerTask(){
@@ -560,6 +802,29 @@ public class processManager {
 			}}, 7000, 7000);	
 	}
 
+	/** 
+     * This is the start function of processManager. It initiates the timers, listening for 
+     * coming slaves, command input and parse and so on.
+     * <p>
+     * The function supports the commands below:
+     * <ul>
+     * <li>quit: quit the program
+     * <li>ps: 
+     * 		<ul>
+     * 		<li>"-sp":print the suspended processes' information
+     * 		<li>"-p":print all the processes' information
+     * 		<li>"-sl":print the slaves' load information
+     * 		<li>"-s <sid>":print the corresponding slave's information
+     * 		</ul>
+     * <li>suspend:suspend a process
+     * <li>resume:resume a process
+     * <li>migrate:migrate a process
+     * <li>terminate:terminate a process
+     * <li><a migratableProcess's name><corresponding params>: run a specific migratable process
+     * </ul>
+     *
+     * @since           1.0
+     */
 	private void start() {
 		managerServer ms = null;
 		try {
@@ -673,18 +938,6 @@ public class processManager {
 					}
 					Integer csid = pidToSlave.get(mpid);
 					migrateProcess(csid, msid, mpid);
-//					if(csid.equals(ID)) {
-//						migratableProcess p = pidToProcess.get(mpid);
-//						p.suspend();
-//						removePidToSlave_ts(mpid);
-//						suspendProcess(mpid, p);
-//						message m = new message(msid, mpid, p, "E");
-//						sidToSlave.get(msid).writeToClient(m);
-//					}
-//					else {
-//						message msg = new message(msid, mpid, null, "M");
-//						sidToSlave.get(csid).writeToClient(msg);
-//					}
 					System.out.printf("Process %d migrated from Slave %d!\n",mpid,csid);
 				}
 			}
@@ -713,11 +966,6 @@ public class processManager {
 							migratableProcess p = pidToProcess.get(spid);
 							p.suspend();
 							suspendProcess(spid, p);
-//							updateProcess_ts(spid, p);
-//							removePidToSlave_ts(spid);
-//							//removePidToThread_ts(spid);
-//							addSuspended_ts(spid);
-//							decreaseLoad_ts(new Integer(ID));
 						}
 						else {
 							message msg = new message(ssid, spid, null, "S");
@@ -783,14 +1031,10 @@ public class processManager {
 						if(rsid.equals(ID)) { 
 							if(p != null) {
 								p.resume();
-//								pidToThread.put(rpid,t);
 							}
 							//remove the process from the suspendedProcess list
 							removeSuspended_ts(rpid);
 							increaseLoad_ts(ID);
-							//synchronized(suspendedProcess) {
-//								removeSuspended(rpid);
-//							}
 						}
 						else {
 							message msg = new message(rsid, rpid, pidToProcess.get(rpid), "E");
@@ -811,7 +1055,6 @@ public class processManager {
 					newProcess = processConstructor.newInstance(obj);
 
 	            } catch (ClassNotFoundException e) {
-					//Couldn't link find that class. stupid user.
 					System.out.println("Run: Could not find class or no such command" + args[0]);
 					continue;
 				} catch (SecurityException e) {
@@ -836,7 +1079,6 @@ public class processManager {
 				
 				Integer sid = chooseBestSlave();
 				addProcess_ts(this.pid, newProcess);
-				//pidToProcess.put(this.pid, newProcess);
 				if(sid.equals(ID)) {
 					if(newProcess != null) {
 						Thread t = new Thread(newProcess);
@@ -845,8 +1087,6 @@ public class processManager {
 						addPidToSlave_ts(this.pid, ID);
 						addPidToSidList_ts(ID, this.pid);
 						increaseLoad_ts(ID);
-						//pidToThread.put(this.pid,t);
-						//pidToSlave.put(this.pid, sid);
 					}
 				}
 				else {
@@ -864,14 +1104,32 @@ public class processManager {
 		
 	}
 	
+	/** 
+     * check whether the process with the prcocess id pid is suspended
+     *
+     * @param pid       the process id of the process that will be checked
+     * @since           1.0
+     */
 	private boolean isSuspended(int pid) {
 		return suspendedProcess.contains(new Integer(pid));
 	}
 	
+	/** 
+     * check whether the process with process id pid exist
+     *
+     * @param pid       the process id of the process that will be checked
+     * @since           1.0
+     */
 	private boolean hasProcess(int pid) {
 		return pidToProcess.containsKey(new Integer(pid));
 	}
 	
+	/** 
+     * check whether the slave with slave id sid exist
+     *
+     * @param pid       the slave id of the slave that will be checked
+     * @since           1.0
+     */
 	private boolean hasSlave(int sid) {
 		return (sidToSlave.containsKey(new Integer(sid)) || sid == ID);
 	}

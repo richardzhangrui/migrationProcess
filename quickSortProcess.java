@@ -1,14 +1,29 @@
 import java.io.PrintStream;
 import java.io.EOFException;
 import java.io.DataInputStream;
-import java.io.InputStreamReader;
-import java.io.BufferedReader;
 import java.io.IOException;
 import java.lang.Thread;
 import java.lang.InterruptedException;
 
+
+/**
+ * quickSortProcess is a migratable class that read all the characters from a file
+ * and use quick sort algorithm to reorder all the characters. Then write all of them
+ * to the output file
+ * <p>
+ * This class implements the migratableProcess interface
+ * 
+ * @author      Rui Zhang
+ * @author      Jing Gao
+ * @version     1.0, 09/15/2013
+ * @since       1.0
+ */
 public class quickSortProcess implements migratableProcess
 {
+	/**
+	 * 
+	 */
+	private static final long serialVersionUID = -1146704688960919863L;
 	private TransactionalFileInputStream  inFile;
 	private TransactionalFileOutputStream outFile;
 
@@ -17,13 +32,19 @@ public class quickSortProcess implements migratableProcess
 	
 	private String strBuffer;
 	
+	/** 
+     * constructor of quickSortProcess class
+     * 
+     * @param args		arguments
+     * @since           1.0
+     */
 	public quickSortProcess(String args[]) throws Exception
 	{
 		suspending = false;
 		isTerminate = false;
 		strBuffer = "";
 		if (args.length != 3) {
-			System.out.println("usage: inverseFileProcess <queryString> <inputFile> <outputFile>");
+			System.out.println("usage: quickSortProcess <inputFile> <outputFile>");
 			throw new Exception("Invalid Arguments");
 		}
 		
@@ -31,6 +52,16 @@ public class quickSortProcess implements migratableProcess
 		outFile = new TransactionalFileOutputStream(args[2], false);
 	}
 	
+	/** 
+     * quick sort main function
+     * <p>
+     * it first split the range and then quick sort the two ranges respectively
+     * 
+     * @param str		characters need to be sorted
+     * @param start		start position need to be sorted
+     * @param end		end position need to be sorted
+     * @since           1.0
+     */
 	private void quickSort(char[] str, int start, int end) {
 		if(start < end - 1) {
 			int i = split(str,start,end);
@@ -39,6 +70,19 @@ public class quickSortProcess implements migratableProcess
 		}
 	}
 	
+	/** 
+     * split the characters' array
+     * <p>
+     * After split, the left side of the return position is less than value on that position.
+     * And the right side of the return position is greater than value on that
+     * position
+     * 
+     * @param str		characters need to be split
+     * @param start		start position need to be split
+     * @param end		end position need to be split
+     * @return			the position of the value on the previous start position
+     * @since           1.0
+     */
 	private int split(char[] str, int start, int end) {
 		int i = start;
 		int value = str[i];
@@ -61,6 +105,14 @@ public class quickSortProcess implements migratableProcess
 		return i;
 	}
 	
+	/** 
+     * main running function of the class
+     * <p>
+     * It reads the input file line by line, quick sort the characters read and output
+     * them to the output file 
+     * 
+     * @since           1.0
+     */
 	public void run()
 	{
 		PrintStream out = new PrintStream(outFile);
@@ -80,16 +132,13 @@ public class quickSortProcess implements migratableProcess
 
 				if (line == null) break;
 				
-				//strBuffer = new StringBuilder().append(strBuffer).append(line.substring(0, line.length()-1)).toString();
 				strBuffer = new StringBuilder().append(strBuffer).append(line).toString();
 				
 				System.out.println(strBuffer);
 				
-				// Make grep take longer so that we don't require extremely large files for interesting results
 				try {
 					Thread.sleep(10000);
 				} catch (InterruptedException e) {
-					// ignore it
 				}
 			}
 			
@@ -124,35 +173,70 @@ public class quickSortProcess implements migratableProcess
 		}
 
 	}
-
+	
+	/** 
+     * suspend the current process
+     * 
+     * @since           1.0
+     */
 	public void suspend()
 	{
 		suspending = true;
 	}
-
+	
+	/** 
+     * convert the process information to string
+     * 
+     * @return			returns the string converted
+     * @since           1.0
+     */
 	public String toString()
 	{
 		String tmp = this.getClass().getName(); 
 		return tmp;
 	}
-
+	
+	/** 
+     * resume the current process
+     * 
+     * @since           1.0
+     */
 	public synchronized void resume()
 	{
 		suspending = false;
 		this.notify();
 	}
-
+	
+	/** 
+     * terminate the current process
+     * 
+     * @since           1.0
+     */
 	public void terminate()
 	{
 		isTerminate = true;	
 	}
-
+	
+	/** 
+     * get the process's transactionFileInputStream
+     * 
+     * @return			the input stream of the process
+     * @see TransactionalFileInputStream
+     * @since           1.0
+     */
 	@Override
 	public TransactionalFileInputStream getInput() {
 		// TODO Auto-generated method stub
 		return this.inFile;
 	}
-
+	
+	/** 
+     * get the process's transactionFileOutputStream
+     * 
+     * @return			the output stream of the process
+     * @see TransactionalFileOutputStream
+     * @since           1.0
+     */
 	@Override
 	public TransactionalFileOutputStream getOutput() {
 		// TODO Auto-generated method stub

@@ -1,21 +1,13 @@
 
 
-import java.net.ServerSocket;
 import java.net.Socket;
-import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.InputStreamReader;
-import java.io.InputStream;
-import java.io.OutputStream;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
-import java.lang.reflect.Constructor;
-import java.lang.reflect.InvocationTargetException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.Map;
-import java.io.Serializable;
 import java.util.Timer;
 import java.util.TimerTask;
 
@@ -28,13 +20,11 @@ public class slaveNode {
 	private boolean isRun = true;
 
 	private Integer sid;
-	//public Integer pid;
 
 	private int load;
 	private String masterHost;
 	private int masterPort;
 
-	//private Thread connectThread;
 	
 	private volatile LinkedList<Integer> suspendedProcess;
 
@@ -135,9 +125,6 @@ public class slaveNode {
 
 	private void suspendProcess(Integer spid, migratableProcess p) {
 		updateProcess_ts(spid, p);
-		//decreaseLoad_ts(pidToSlave.get(spid));
-		//removePidToSlave_ts(spid);
-		//removePidToThread_ts(spid);
 		addSuspended_ts(spid);
 	}
 
@@ -149,11 +136,6 @@ public class slaveNode {
 		return pidToProcess.containsKey(new Integer(pid));
 	}
 
-
-
-
-
-
 	public void doJob(message msg) {
 	
 		switch(msg.getCommand()) {
@@ -162,7 +144,6 @@ public class slaveNode {
 				int rpid=msg.getPid();
 
 				if(!hasProcess(rpid)) {
-					//System.out.println("Resume process %d failed: there's no process running with this pid!",rpid);
 					if(msg.getProcess() != null) {
 						migratableProcess p = msg.getProcess();
 						Thread t = new Thread(p);
@@ -182,9 +163,7 @@ public class slaveNode {
 				}
 				else {
 					migratableProcess p = pidToProcess.get(rpid);
-					//if(p != null) {
 					p.resume();
-					//}
 					removeSuspended_ts(rpid);
 					increaseLoad_ts(this.load);
 					this.writeToMaster(msg);
@@ -250,7 +229,6 @@ public class slaveNode {
 					System.out.println("Terminate process failed: there's no process running with this processID: "+tpid);
 				}
 				else{
-					//Integer tsid = pidToSlave.get(tpid);
 					migratableProcess p = pidToProcess.get(tpid);
 					p.terminate();
 					if(!isSuspended(tpid)) {
@@ -288,12 +266,6 @@ public class slaveNode {
 					    Thread value = entry.getValue();
 					    if (!value.isAlive()) {
 					    	ToBeDelete.add(key);
-//					    	removePidToThread_ts(key);
-//					    	removeProcess_ts(key);
-//							decreaseLoad_ts(load);
-//							message msg = new message(sid, key, null, "T");
-//							writeToMaster(msg);
-//							System.out.printf("Removed dead process %d!\n",key);
 					    }
 					}
 					
@@ -324,7 +296,6 @@ public class slaveNode {
 				System.err.println("Failed to create socket!");
 			}
 			
-			//OutputStream outStream  = sock.getOutputStream();
 			try {
 				sn.objOut = new ObjectOutputStream(sn.sock.getOutputStream());
 				sn.objIn = new ObjectInputStream(sn.sock.getInputStream());
@@ -346,7 +317,6 @@ public class slaveNode {
 				try {
 					Object o = sn.objIn.readObject();
 					if(!(o instanceof message)) {
-						//System.err.printf("ServiceForSlave: addr %s fail to recognize this message!\n", slaveAddr.toString());
 						continue;
 					}
 				

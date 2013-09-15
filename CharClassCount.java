@@ -1,17 +1,18 @@
 import java.io.PrintStream;
 import java.io.EOFException;
 import java.io.DataInputStream;
-import java.io.InputStreamReader;
-import java.io.BufferedReader;
 import java.io.IOException;
 import java.lang.Thread;
 import java.lang.InterruptedException;
 
 public class CharClassCount implements migratableProcess
 {
+	/**
+	 * 
+	 */
+	private static final long serialVersionUID = 8473402089878761238L;
 	private TransactionalFileInputStream  inFile;
 	private TransactionalFileOutputStream outFile;
-	private String query;
 
 	private volatile boolean suspending;
 	private volatile boolean isTerminate;
@@ -21,11 +22,10 @@ public class CharClassCount implements migratableProcess
 		suspending = false;
 		isTerminate = false;
 		if (args.length != 3) {
-			System.out.println("usage: CharClassCount <queryString> <inputFile> <outputFile>");
+			System.out.println("usage: CharClassCount  <inputFile> <outputFile>");
 			throw new Exception("Invalid Arguments");
 		}
 		
-		query = args[0];
 		inFile = new TransactionalFileInputStream(args[1]);
 		outFile = new TransactionalFileOutputStream(args[2], false);
 	}

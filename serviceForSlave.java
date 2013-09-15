@@ -6,6 +6,17 @@ import java.io.ObjectOutputStream;
 import java.net.InetAddress;
 import java.net.Socket;
 
+/**
+ * serviceForSlave is the service class that responsible for receiving messages from
+ * slaves and doing corresponding jobs
+ * <p>
+ * This class uses objectInputStream and objectOutputStream to transmit objects.
+ * 
+ * @author      Rui Zhang
+ * @author      Jing Gao
+ * @version     1.0, 09/15/2013
+ * @since       1.0
+ */
 public class serviceForSlave implements Runnable{
 	private processManager pm;
 	private ObjectInputStream in;
@@ -17,6 +28,16 @@ public class serviceForSlave implements Runnable{
 	
 	private volatile boolean isRun;
 	
+	/** 
+     * constructor of serviceForSlave class
+     * 
+     * @param pm		the processManager that doing jobs for the service and maintain 
+     * 					information of slaves and processes
+     * @param sock		socket that created by managerServer, input and output are through 
+     * 					this socket
+     * @see processManager
+     * @since           1.0
+     */
 	public serviceForSlave(processManager pm, Socket sock) throws IOException {
 		this.isRun = true;
 		this.sock = sock;
@@ -31,18 +52,40 @@ public class serviceForSlave implements Runnable{
 		}
 	}
 	
+	/** 
+     * get the output stream of the service
+     * 
+     * @return			return the ObjectOutputStream of the current service
+     * @since           1.0
+     */
 	public ObjectOutputStream getOut() {
 		return out;
 	}
 	
+	/** 
+     * stop the current service
+     * 
+     * @since           1.0
+     */
 	public void stopService() {
 		isRun = false;
 	}
 	
-
+	/** 
+     * get the address of the slave connecting to this service
+     * 
+     * @return			return the address of the slave converted to string
+     * @since           1.0
+     */
 	public String getAddress() {
 		return slaveAddr.toString(); 
 	}	
+	
+	/** 
+     * write the message to the slave connecting to it
+     * 
+     * @since           1.0
+     */
 	public void writeToClient(message msg) {
 		try {
 			synchronized(out)
@@ -55,6 +98,14 @@ public class serviceForSlave implements Runnable{
 		}
 	}
 	
+	/** 
+     * The main service function of this class. It is responsible for message parse and forward
+     * corresponding jobs to processManager
+     * <p>
+     * Message with command "C" is processed here. It means a new slave has connected to this server.
+     * 
+     * @since           1.0
+     */
 	@Override
 	public void run() {
 		// TODO Auto-generated method stub
@@ -70,10 +121,7 @@ public class serviceForSlave implements Runnable{
 				msg = (message)o;
 				switch(msg.getCommand()) {
 					case "C":
-//						synchronized(pm.sid) {
-//							msg.setSid(pm.sid);
-//						}
-						pm.addSlave(this);
+						pm.addSlave_ts(this);
 						msg.setSid(this.sid);
 						writeToClient(msg);
 						break;
@@ -110,11 +158,23 @@ public class serviceForSlave implements Runnable{
 		}
 		
 	}
-
+	
+	/** 
+     * get the slave id of the service
+     * 
+     * @return			return slave id of the service
+     * @since           1.0
+     */
 	public Integer getSid() {
 		return sid;
 	}
-
+	
+	/** 
+     * set the slave id of the service
+     * 
+     * @param sid		slave id of slave that connect to this service
+     * @since           1.0
+     */
 	public void setSid(Integer sid) {
 		this.sid = sid;
 	}
