@@ -5,6 +5,18 @@ import java.io.IOException;
 import java.lang.Thread;
 import java.lang.InterruptedException;
 
+/**
+ * CharClassCount is a migratable class that read all the characters from a each line
+ * in a file, and count the numbers of consonants, vowels, digits, spaces and punctuations
+ * of each line, and print the result to the output file.
+ * <p>
+ * This class implements the migratableProcess interface
+ * 
+ * @author      Rui Zhang
+ * @author      Jing Gao
+ * @version     1.0, 09/15/2013
+ * @since       1.0
+ */
 public class CharClassCount implements migratableProcess
 {
 	/**
@@ -17,6 +29,12 @@ public class CharClassCount implements migratableProcess
 	private volatile boolean suspending;
 	private volatile boolean isTerminate;
 
+	/** 
+     * constructor of CharClassCount class
+     * 
+     * @param args		arguments
+     * @since           1.0
+     */
 	public CharClassCount(String args[]) throws Exception
 	{
 		suspending = false;
@@ -30,6 +48,14 @@ public class CharClassCount implements migratableProcess
 		outFile = new TransactionalFileOutputStream(args[2], false);
 	}
 
+	/** 
+     * main running function of the class
+     * <p>
+     * It reads the input file line by line, counting the numbers of different characters
+     * and print to the output file 
+     * 
+     * @since           1.0
+     */
 	public void run()
 	{
 		PrintStream out = new PrintStream(outFile);
@@ -94,34 +120,69 @@ public class CharClassCount implements migratableProcess
 
 	}
 
+	/** 
+     * suspend the current process
+     * 
+     * @since           1.0
+     */
 	public void suspend()
 	{
 		suspending = true;
 	}
 
+	/** 
+     * convert the process information to string
+     * 
+     * @return			returns the string converted
+     * @since           1.0
+     */
 	public String toString()
 	{
 		String tmp = this.getClass().getName(); 
 		return tmp;
 	}
 
+	/** 
+     * resume the current process
+     * 
+     * @since           1.0
+     */
 	public synchronized void resume()
 	{
 		suspending = false;
 		this.notify();
 	}
 
+	/** 
+     * terminate the current process
+     * 
+     * @since           1.0
+     */
 	public void terminate()
 	{
 		isTerminate = true;	
 	}
 
+	/** 
+     * get the process's transactionFileInputStream
+     * 
+     * @return			the input stream of the process
+     * @see TransactionalFileInputStream
+     * @since           1.0
+     */
 	@Override
 	public TransactionalFileInputStream getInput() {
 		// TODO Auto-generated method stub
 		return this.inFile;
 	}
 
+	/** 
+     * get the process's transactionFileOutputStream
+     * 
+     * @return			the output stream of the process
+     * @see TransactionalFileOutputStream
+     * @since           1.0
+     */
 	@Override
 	public TransactionalFileOutputStream getOutput() {
 		// TODO Auto-generated method stub

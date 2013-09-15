@@ -11,6 +11,16 @@ import java.util.Map;
 import java.util.Timer;
 import java.util.TimerTask;
 
+/**
+ * slaveNode is the class running on slave nodes, responsible for connecting to
+ * master node, receiving messages from master node, doing corresponding jobs, 
+ * replying to the master node, and periodically reaping local failures
+ * 
+ * @author      Rui Zhang
+ * @author      Jing Gao
+ * @version     1.0, 09/15/2013
+ * @since       1.0
+ */
 public class slaveNode {
 
 	private Socket sock;
@@ -31,6 +41,13 @@ public class slaveNode {
 	private volatile HashMap<Integer, migratableProcess> pidToProcess;
 	private volatile HashMap<Integer, Thread>  pidToThread;
 
+	/** 
+     * constructor of slaveNode class
+     * 
+     * @param mhost		host name of master node
+     * @param mport		listening/accepting port of master node
+     * @since           1.0
+     */
 	public slaveNode(String mhost, int mport) {
 		this.load = 0;
 		//this.pid = 0;
@@ -43,7 +60,11 @@ public class slaveNode {
 		pidToThread = new HashMap<Integer, Thread>();
 	}
 
-
+	/** 
+     * write the message to the master node
+     * 
+     * @since           1.0
+     */
 	public void writeToMaster(message msg) {
 		try {
 			synchronized(objOut)
@@ -56,15 +77,30 @@ public class slaveNode {
 		}
 	}
 
-
+	/** 
+     * get the port number of the master node
+     * 
+     * @since           1.0
+     */
 	public int getPort() {
 		return masterPort;
 	}
 	
+	/** 
+     * get the port number of the master node
+     * 
+     * @since           1.0
+     */
 	public void setPort(int port) {
 		this.masterPort = port;
 	}
 
+	/** 
+     * remove a entry with process id "pid" from the suspendedProcess list thread safely
+     * 
+     * @param pid       the process id of the process whose list will be updated
+     * @since           1.0
+     */
 	private void removeSuspended_ts(Integer pid) {
 		synchronized(suspendedProcess){
 			for(int i = 0; i < suspendedProcess.size(); i++) {
@@ -76,66 +112,147 @@ public class slaveNode {
 		}
 	}
 
+	/** 
+     * add a entry with process id "pid" to the suspendedProcess list thread safely
+     * 
+     * @param pid       the process id of the process whose list will be updated
+     * @since           1.0
+     */
 	private void addSuspended_ts(Integer pid) {
 		synchronized(suspendedProcess) {
 			suspendedProcess.add(pid);
 		}
 	}
 
+	/** 
+     * remove a entry with process id "pid" from the pidToProcess hashmap thread safely
+     * 
+     * @param pid       the process id of the process whose hashmap will be updated
+     * @since           1.0
+     */
 	private void removeProcess_ts(Integer pid) {
 		synchronized(pidToProcess) {
 			pidToProcess.remove(pid);
 		}
 	}
 
+	/** 
+     * add a entry with process id "pid" to the pidToProcess hashmap thread safely
+     * 
+     * @param pid       the process id of the process whose hashmap will be updated
+     * @since           1.0
+     */
 	private void addProcess_ts(Integer pid, migratableProcess p) {
 		synchronized(pidToProcess) {
 			pidToProcess.put(pid, p);
 		}
 	}
 
+	/** 
+     * update a entry with process id "pid" in the pidToProcess hashmap thread safely
+     * 
+     * @param pid       the process id of the process whose hashmap will be updated
+     * @since           1.0
+     */
 	private void updateProcess_ts(Integer pid, migratableProcess p) {
 		addProcess_ts(pid, p);
 	}
 
+	/** 
+     * add a entry with process id "pid" in the pidToThread hashmap thread safely
+     * 
+     * @param pid       the process id of the process whose hashmap will be updated
+     * @since           1.0
+     */
 	private void addPidToThread_ts(Integer pid, Thread t) {
 		synchronized(pidToThread) {
 			pidToThread.put(pid, t);
 		}
 	}
 
+	/** 
+     * remove a entry with process id "pid" from the pidToThread hashmap thread safely
+     * 
+     * @param pid       the process id of the process whose hashmap will be updated
+     * @since           1.0
+     */
 	private void removePidToThread_ts(Integer pid) {
 		synchronized(pidToThread) {
 			pidToThread.remove(pid);
 		}
 	}
 
-
+	/** 
+     * decrease the load of the slave thread safely
+     * 
+     * @param load      local load, i. e., the number of running processes on this slave
+     * @since           1.0
+     */
 	private void increaseLoad_ts(Integer load) {
 		synchronized(load){
 			load++;
 		}
 	}
 	
+	/** 
+     * increase the load of the slave thread safely
+     * 
+     * @param load      local load, i. e., the number of running processes on this slave
+     * @since           1.0
+     */
 	private void decreaseLoad_ts(Integer load) {
 		synchronized(load){
 			load--;
 		}
 	}
 
+	/** 
+     * Suspend the process with process id spid and update the corresponding information
+     * <p>
+     * Because process may be migrated to other machines if suspended the process state 
+     * should be updated once suspending. Suspending a process will decrease the load of
+     * the current slave, so there's no reason to migrate a suspended process. That is, the
+     * suspended processes cannot be migrated
+     *
+     * @param spid		process id of the process that will be suspended
+     * @param p			process that will be suspended and updated
+     * @see	migratableProcess
+     * @since           1.0
+     */
 	private void suspendProcess(Integer spid, migratableProcess p) {
 		updateProcess_ts(spid, p);
 		addSuspended_ts(spid);
 	}
 
+	/** 
+     * check whether the process with the prcocess id pid is suspended
+     *
+     * @param pid       the process id of the process that will be checked
+     * @since           1.0
+     */
 	private boolean isSuspended(int pid) {
 		return suspendedProcess.contains(new Integer(pid));
 	}
-	
+
+	/** 
+     * check whether the process with process id pid exist
+     *
+     * @param pid       the process id of the process that will be checked
+     * @since           1.0
+     */	
 	private boolean hasProcess(int pid) {
 		return pidToProcess.containsKey(new Integer(pid));
 	}
 
+    /** 
+     * This is where the slave node deals with master's messages and does corresponding jobs.
+     * It parses the message and get the command and associated information such as process,
+     * sid and pid, then run/migrate/suspend/resume/terminate the specified process accordin
+     * to the command.
+     * 
+     * @param msg       the message from master node
+     * @since           1.0
+     */
 	public void doJob(message msg) {
 	
 		switch(msg.getCommand()) {
@@ -248,7 +365,18 @@ public class slaveNode {
 		}
 	
 	}
-	
+
+	/** 
+     * Start a timer which do jobs of reaping dead process
+     * <p>
+     * In order to decide whether the process is dead or not, the function will check
+     * if the thread responsible for running process is alive. If it is not alive, then
+     * add this process into a list, and after checking all threads, the dead processes
+     * will be removed. This delay to delete processes is to ensure the CoccurentModification
+     * Exception won't happen 
+     *
+     * @since           1.0
+     */	
 	public void startReapTimer() {
 		if(this.isRun) {
 				//reap unalive theads
@@ -283,6 +411,13 @@ public class slaveNode {
 	
 	}
 
+	/** 
+     * main function of the slave node, responsible of establishing socket connenction and I/O, 
+     * reading message from the master, and forwarding the jobs to doJob() function.
+     * 
+     * @param argv      user specify hostname and port in arguments
+     * @since           1.0
+     */
 	public static void main(String[] argv) {
 		
 		if (argv.length == 2) {
